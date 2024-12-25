@@ -4,6 +4,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/Silver.ts",
+    "quick": "tsx src/Silver.ts",
     "build": "tsc",
     "start": "node dist/Silver.js"
   },

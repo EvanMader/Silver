@@ -25,8 +25,8 @@ export class Deck {
         this.tiers = Array.from({length: 6}, () => ({pets: [], foods: []}));
         this.groups = [];
 		if (bool) {
-			const petFilePath = './gameinfo/Pets.json';
-			const foodFilePath = './gameinfo/Foods.json';
+			const petFilePath = './data/Pets.json';
+			const foodFilePath = './data/Foods.json';
 
 			const petData: Pet[] = this.parseJsonFile(petFilePath) as Pet[];
 			const foodData: Food[] = this.parseJsonFile(foodFilePath) as Food[];
@@ -41,7 +41,7 @@ export class Deck {
 			return JSON.parse(jsonData);
 		} catch (error: unknown) {
             if (error instanceof Error) console.error(`Failed to parse JSON from ${filePath}: ${error.message}`);
-            else console.error(`Unknow error occured while parsing ${filePath}.`)
+            else console.error(`Unknown error occured while parsing ${filePath}.`)
 			return [];
 		}
 	}
@@ -58,14 +58,15 @@ export class Deck {
 		return tiers;
 	}
 
-    public async constructGroups() {
+    public constructGroups() {
         for (let i = 0; i < 6; i++) {
-            const shuffledPets = [...this.tiers[i].pets].sort(() => Math.random() - 0.5);
+            let shuffledPets = [...this.tiers[i].pets].sort(() => Math.random() - 0.5).filter((pet) => pet.name !== "Snail");
 
             const tierGroups: Tier[] = [];
             let numGroups: number = Math.floor(this.tiers[i].pets.length / 3);
 
             for (let j = 0; j < numGroups; j++) {
+                if (j >= 7) break;
                 const shuffledFoods = [...this.tiers[i].foods].sort(() => Math.random() - 0.5);
                 const selectedPets = shuffledPets.splice(0, 3);
                 const selectedFoods = shuffledFoods.splice(0, 2);
@@ -78,22 +79,16 @@ export class Deck {
     }
 
     public getCode(): string {
-        let out: string = "{\"Title\":\"Silver\",\"Minion\":36,\"Minions\":[";
-        
-        for(const tier of this.tiers) {
-            for (const pet of tier.pets) {
-                out += pet.id + ", "
-            }
-        }
-        out = out.substring(0, out.length-2) + "],\"Spells\":[";
-
-        for(const tier of this.tiers) {
-            for (const food of tier.foods) {
-                out += food.id + ", "
-            }
-        }
-        out = out.substring(0, out.length-2) + "]}";
-
-        return out;
+        const output = {
+			Title: 'Silver',
+			Minion: 36,
+			Minions: this.tiers.map((tier) =>
+				tier.pets.map((pet) => pet.id)
+			).flat(),
+			Spells: this.tiers.map((tier) =>
+				tier.foods.map((food) => food.id)
+			).flat(),
+		};
+        return JSON.stringify(output);
     }
 }

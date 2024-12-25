@@ -2,7 +2,7 @@ import { Client, Events, User } from "discord.js";
 import { Game } from "./Game";
 
 const matchmakingQueue: User[] = [];
-const gameList: Game[] = [];
+export const gameList: Game[] = [];
 
 export function handleCommands(client: Client) {
 	client.on(Events.InteractionCreate, async (interaction) => {
@@ -23,9 +23,8 @@ export function handleCommands(client: Client) {
                 matchmakingQueue.push(interaction.user);
                 await interaction.reply(`Added ${interaction.user.displayName} to the queue.`);
                 if (matchmakingQueue.length >= 2) {
-                    const game: Game = new Game(matchmakingQueue.shift()!, matchmakingQueue.shift()!, client, interaction.guild!);
+                    const game: Game = await Game.create(matchmakingQueue.shift()!, matchmakingQueue.shift()!, client, interaction.guild!);
                     gameList.push(game);
-                    game.initialize();
                 }
             }
 
