@@ -4,12 +4,14 @@ export interface Food {
 	name: string;
 	id: number;
 	tier: number;
+	packs: number[];
 }
 
 export interface Pet {
 	name: string;
 	id: number;
 	tier: number;
+	packs: number[];
 }
 
 export interface Tier {
@@ -21,15 +23,19 @@ export class Deck {
 	tiers: Tier[];
     groups: Tier[][];
 
-	public constructor(bool: boolean) {
+	public constructor(bool: boolean, packs: number[]) {
         this.tiers = Array.from({length: 6}, () => ({pets: [], foods: []}));
         this.groups = [];
 		if (bool) {
 			const petFilePath = './data/Pets.json';
 			const foodFilePath = './data/Foods.json';
 
-			const petData: Pet[] = this.parseJsonFile(petFilePath) as Pet[];
-			const foodData: Food[] = this.parseJsonFile(foodFilePath) as Food[];
+			let petData: Pet[] = this.parseJsonFile(petFilePath) as Pet[];
+			let foodData: Food[] = this.parseJsonFile(foodFilePath) as Food[];
+
+
+			petData = petData.filter(pet => pet.packs?.some(pack => packs.includes(pack)));
+			foodData = foodData.filter(food => food.packs?.some(pack => packs.includes(pack)));
 
 			this.tiers = this.constructTiers(petData, foodData);
 		}
@@ -60,7 +66,10 @@ export class Deck {
 
     public constructGroups() {
         for (let i = 0; i < 6; i++) {
-            let shuffledPets = [...this.tiers[i].pets].sort(() => Math.random() - 0.5).filter((pet) => pet.name !== "Snail");
+            let shuffledPets = [...this.tiers[i].pets].sort(() => Math.random() - 0.5).filter( (pet) => 
+				pet.name !== "Snail" &&
+				pet.name !== "Penguin"	
+			);
 
             const tierGroups: Tier[] = [];
             let numGroups: number = Math.floor(this.tiers[i].pets.length / 3);

@@ -2,6 +2,8 @@ import "dotenv/config";
 import { Client } from "discord.js";
 import registerCommands from "./RegisterCommands";
 import { handleCommands } from "./HandleCommands";
+import { sendMessageWithButtons } from "./Roles";
+
 
 const TOKEN = process.env.TOKEN;
 if (TOKEN === undefined) {
@@ -17,8 +19,7 @@ client.on("ready", (c) => {
     console.log(`${c.user.username} is online.`);
     registerCommands(TOKEN, client.application!.id);
     handleCommands(client);
+    //sendMessageWithButtons('1321488575145050122', client);
 });
 
 client.login(TOKEN);
-
- 

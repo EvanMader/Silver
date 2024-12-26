@@ -5,7 +5,6 @@ import {
 	Message,
 	PermissionFlagsBits,
 	TextChannel,
-	User,
 } from 'discord.js';
 import { Tier, Pet, Food, Deck } from './Deck';
 import { Player } from './Player';
@@ -19,6 +18,7 @@ export class Game {
 	client: Client;
 	deck: Deck;
 	turn: number;
+	packs: number[];
 
 	private constructor(
 		player1: Player,
@@ -26,24 +26,24 @@ export class Game {
 		client: Client,
 		guild: Guild,
 		channel: TextChannel,
+		packs: number[]
 	) {
 		this.player1 = player1;
 		this.player2 = player2;
 		this.guild = guild;
 		this.channel = channel;
 		this.client = client;
-		this.deck = new Deck(true);
+		this.deck = new Deck(true, packs);
 		this.turn = Math.floor(Math.random() * 2);
+		this.packs = packs;
 	}
 
 	public static async create(
-		user1: User,
-		user2: User,
+		player1: Player,
+		player2: Player,
 		client: Client,
 		guild: Guild
 	) {
-		const player1 = new Player(user1);
-		const player2 = new Player(user2);
 
 		const channel = await guild.channels.create({
 			parent: '1320478069236039814',
@@ -52,20 +52,21 @@ export class Game {
 			permissionOverwrites: [
 				{
 					id: guild.roles.everyone.id,
-					deny: [PermissionFlagsBits.ViewChannel],
+					deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AddReactions],
 				},
 				{
 					id: player1.user.id,
-					allow: [PermissionFlagsBits.ViewChannel],
+					allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AddReactions],
 				},
 				{
 					id: player2.user.id,
-					allow: [PermissionFlagsBits.ViewChannel],
+					allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AddReactions],
 				},
 			],
 		});
+		const packs: number[] = player1.packs.filter((num) => player2.packs.includes(num));
 
-		const current: Game = new Game(player1, player2, client, guild, channel);
+		const current: Game = new Game(player1, player2, client, guild, channel, packs);
 		current.startGame();
 		return current;
 	}
@@ -165,13 +166,15 @@ export class Game {
 		let remainingTime = timerLength; 
 		const countdown = await this.channel.send(`You have ${Math.floor(remainingTime / 1000)} seconds remaining.`);
 
-		const updateCountdown = () => {
+		const updateCountdown = async () => {
 			remainingTime -= 5000;
 			const remainingSeconds = Math.floor(remainingTime / 1000);
 
-			if (remainingTime >= 0) {
-				countdown.edit(`You have ${remainingSeconds} seconds remaining.`).catch();
-				interval = setTimeout(updateCountdown, 5000);
+			if (remainingTime >= 0 && countdown !== null) {
+				try {
+					await countdown.edit(`You have ${remainingSeconds} seconds remaining.`);
+					interval = setTimeout(updateCountdown, 5000);
+				} catch {}
 			}
 		};
 
@@ -231,13 +234,15 @@ export class Game {
 		let remainingTime = timerLength; 
 		const countdown = await this.channel.send(`You have ${Math.floor(remainingTime / 1000)} seconds remaining.`);
 
-		const updateCountdown = () => {
+		const updateCountdown = async () => {
 			remainingTime -= 5000;
 			const remainingSeconds = Math.floor(remainingTime / 1000);
 
-			if (remainingTime >= 0) {
-				countdown.edit(`You have ${remainingSeconds} seconds remaining.`).catch();
-				interval = setTimeout(updateCountdown, 5000);
+			if (remainingTime >= 0 && countdown !== null) {
+				try {
+					await countdown.edit(`You have ${remainingSeconds} seconds remaining.`);
+					interval = setTimeout(updateCountdown, 5000);
+				} catch {}
 			}
 		};
 
