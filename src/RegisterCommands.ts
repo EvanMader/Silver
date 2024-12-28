@@ -9,7 +9,7 @@ export default async function registerCommands(token: string, client_id: Snowfla
         {
             name: "leave",
             description: "Leaves matchmaking queue."
-        },
+        }
 	];
 
 	const rest = new REST({ version: '10' }).setToken(token);

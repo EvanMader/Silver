@@ -9,6 +9,7 @@ import {
 import { Tier, Pet, Food, Deck } from './Deck';
 import { Player } from './Player';
 import { gameList } from './HandleCommands';
+import sharp = require('sharp');
 
 export class Game {
 	player1: Player;
@@ -97,7 +98,12 @@ export class Game {
 			this.player2.deck.tiers[i].foods.push( this.deck.tiers[i].foods[index]);
 			this.deck.tiers[i].foods.splice(index, 1);
 		}
-		await this.channel.send(`__**Randomly Selected 7 Pets and 1 Food Per Tier**__\n ${this.getGroups(this.player1.deck.tiers)}`);
+		await this.channel.send({ 
+			content: '__**Randomly Selected 7 Pets and 1 Food Per Tier**__',
+			files: [{
+				attachment: await this.getImage(this.player1.deck.tiers),
+			}]
+		});
 
 		let order: number[] = [0, 1, 2, 3, 4, 5];
 		for (let i = order.length - 1; i > 0; i--) {
@@ -109,7 +115,7 @@ export class Game {
 
 		let timer: number = 90000;
 		for (let i = 0; i < 6; i++) {
-			await this.channel.send(`__**TIER ${order[i] + 1}**__\n`);
+			await this.channel.send(`# TIER ${order[i] + 1}`);
 			try {
 				if (this.getTurn()) await this.banGroup(this.player1, order[i], timer);
 				else await this.banGroup(this.player2, order[i], timer);
@@ -155,17 +161,15 @@ export class Game {
 			const filter = (message: Message) => {
 				return (
 					message.channel.id === this.channel.id &&
-					message.content.startsWith('!end ')
+					message.content.startsWith('!end')
 				);
 			};
 
-			const collector = this.channel.createMessageCollector();
+			const collector = this.channel.createMessageCollector({ filter });
 
 			collector?.on('collect', async (message: Message) => {
-				if (message.content.startsWith("!end")) {
-					this.deleteGame(gameList);
-					resolve();
-				}
+				this.deleteGame(gameList);
+				resolve();
 			});
 		});
 	}
@@ -176,13 +180,12 @@ export class Game {
 	}
 
 	private async banGroup(player: Player, tier: number, timerLength: number) {
-		await this.channel.send(
-			`<@${player.user.id}> Select one tier ${
-				tier + 1
-			} group to **ban**!\nGroups Left:\n${this.getGroups(
-				this.deck.groups[tier]
-			)}`
-		);
+		await this.channel.send({
+			content: `<@${player.user.id}> Select one tier ${tier + 1} group to **ban**!`,
+			files:[{
+				attachment: await this.getImage(this.deck.groups[tier]),
+			}]
+		});
 
 		let remainingTime = timerLength; 
 		const countdown = await this.channel.send(`You have ${Math.floor(remainingTime / 1000)} seconds remaining.`);
@@ -203,7 +206,6 @@ export class Game {
 
 		await new Promise<void>((resolve, reject) => {
 			const filter = (message: Message) => {
-				const choice: number = parseInt(message.content.substring(5));
 				return (
 					message.author.id === player.user.id &&
 					message.channel.id === this.channel.id
@@ -212,13 +214,18 @@ export class Game {
 
 			const collector = this.channel.createMessageCollector({
 				filter,
-				time: timerLength,
+				time: timerLength + 1000,
 			});
 
 			collector?.on('collect', async (message: Message) => {
 				if (message.content.startsWith('!end')) collector.stop('end');
 				if (message.content.startsWith("!team")) {
-					await this.channel.send(`<@${player.user.id}> Current Team:\n${this.getGroups(player.deck.tiers)}`)
+					await this.channel.send({
+						content: `<@${player.user.id}> Current Team:`,
+						files: [{
+							attachment: await this.getImage(player.deck.tiers),
+						}]
+					});
 				}
 
 				let choice: number = parseInt(message.content.substring(5));
@@ -251,7 +258,12 @@ export class Game {
 	}
 
 	private async pickGroup(player: Player, tier: number, timerLength: number) {
-		await this.channel.send(`<@${player.user.id}> Select one tier ${ tier + 1 } group to **pick**!\nGroups Left:\n${this.getGroups( this.deck.groups[tier])}`);
+		await this.channel.send({
+			content: `<@${player.user.id}> Select one tier ${tier + 1} group to **pick**!`,
+			files:[{
+				attachment: await this.getImage(this.deck.groups[tier]),
+			}]
+		});
 
 		let remainingTime = timerLength; 
 		const countdown = await this.channel.send(`You have ${Math.floor(remainingTime / 1000)} seconds remaining.`);
@@ -272,7 +284,6 @@ export class Game {
 
 		await new Promise<void>((resolve, reject) => {
 			const filter = (message: Message) => {
-				const choice: number = parseInt(message.content.substring(6));
 				return (
 					message.author.id === player.user.id &&
 					message.channel.id === this.channel.id
@@ -281,13 +292,18 @@ export class Game {
 
 			const collector = this.channel.createMessageCollector({
 				filter,
-				time: timerLength,
+				time: timerLength + 1000,
 			});
 
 			collector?.on('collect', async (message: Message) => {
 				if (message.content.startsWith('!end')) collector.stop('end');
 				if (message.content.startsWith("!team")) {
-					await this.channel.send(`<@${player.user.id}> Current Team:\n${this.getGroups(player.deck.tiers)}`)
+					await this.channel.send({
+						content: `<@${player.user.id}> Current Team:`,
+						files: [{
+							attachment: await this.getImage(player.deck.tiers),
+						}]
+					});
 				}
 
 				let choice: number = parseInt(message.content.substring(6));
@@ -339,17 +355,77 @@ export class Game {
 		return '[' + array.map((obj) => obj.name).join(', ') + ']';
 	}
 
-	private getGroups(tiers: Tier[]): string {
-		let out: string = '';
+	private async getImage(tiers: Tier[]): Promise<Buffer> {
+		const overlayWidth = 42;
+		const overlayHeight = 42;
+		const horizontalSpacing = 5;
+		const verticalSpacing = 10;
 
-		let i: number = 0;
-		for (const tier of tiers) {
-			i++;
-			const petNames = tier.pets.map((pet) => pet.name).join(', ');
-			const foodNames = tier.foods.map((food) => food.name).join(', ');
-			out += `${i}: [${petNames}] [${foodNames}]\n`;
+		const allOverlays: { input: Buffer; top: number; left: number }[] = [];
+
+		for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
+			const { pets, foods } = tiers[tierIndex];
+
+			const tierTop = tierIndex * (overlayHeight + verticalSpacing) + verticalSpacing;
+
+			const numberImagePath = `./data/sprites/numbers/${tierIndex + 1}.png`;
+			const numberBuffer = await sharp(numberImagePath)
+				.resize(overlayWidth, overlayHeight)
+				.toBuffer();
+
+			allOverlays.push({
+				input: numberBuffer,
+				top: tierTop,
+				left: 15,
+			});
+
+			const petOverlays = pets.map(async (Pet, petIndex) => {
+				const sanitizedPet = Pet.name
+					.replace(/[^a-zA-Z0-9]/g, '')
+					.replace(/\s+/g, '');
+				const imgPath = `./data/sprites/pets/${sanitizedPet}.png`;
+
+				const petLeft = (petIndex + 1) * (overlayWidth + horizontalSpacing) + 20;
+
+				return sharp(imgPath)
+					.resize(overlayWidth, overlayHeight)
+					.toBuffer()
+					.then((buffer) => ({
+						input: buffer,
+						top: tierTop,
+						left: petLeft,
+					}));
+			});
+
+			const foodOverlays = foods.map(async (Food, foodIndex) => {
+				const sanitizedFood = Food.name
+					.replace(/[^a-zA-Z0-9]/g, '')
+					.replace(/\s+/g, '');
+				const imgPath = `./data/sprites/foods/${sanitizedFood}.png`;
+
+				const foodLeft = (foodIndex + 12) * (overlayWidth + horizontalSpacing);
+
+				return sharp(imgPath)
+					.resize(overlayWidth, overlayHeight)
+					.toBuffer()
+					.then((buffer) => ({
+						input: buffer,
+						top: tierTop,
+						left: foodLeft,
+					}));
+			});
+
+			const tierOverlays = [...petOverlays, ...foodOverlays];
+			const tierBuffers = await Promise.all(tierOverlays);
+
+			allOverlays.push(...tierBuffers);
 		}
 
-		return out;
+		const resultBuffer = await sharp('./data/sprites/PetViewer.png')
+			.resize({ width: 800, height: tiers.length * (overlayHeight + verticalSpacing) + verticalSpacing })
+			.composite(allOverlays)
+			.toBuffer();
+
+		return resultBuffer;
 	}
 }

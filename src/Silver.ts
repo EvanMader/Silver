@@ -4,7 +4,8 @@ import registerCommands from './RegisterCommands';
 import { handleCommands } from './HandleCommands';
 import { sendMessageWithButtons } from './Roles';
 import * as fs from 'fs';
-import { Food, Pet } from './Deck';
+import { Food, Pet, Tier } from './Deck';
+import sharp = require('sharp');
 
 const TOKEN = process.env.TOKEN;
 if (TOKEN === undefined) {
