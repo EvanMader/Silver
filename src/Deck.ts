@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import { foods, pets } from './Silver';
 
 export interface Food {
 	name: string;
@@ -27,32 +27,14 @@ export class Deck {
         this.tiers = Array.from({length: 6}, () => ({pets: [], foods: []}));
         this.groups = [];
 		if (bool) {
-			const petFilePath = './data/Pets.json';
-			const foodFilePath = './data/Foods.json';
-
-			let petData: Pet[] = this.parseJsonFile(petFilePath) as Pet[];
-			let foodData: Food[] = this.parseJsonFile(foodFilePath) as Food[];
-
-
-			petData = petData.filter(pet => pet.packs?.some(pack => packs.includes(pack)));
-			foodData = foodData.filter(food => food.packs?.some(pack => packs.includes(pack)));
-
-			this.tiers = this.constructTiers(petData, foodData);
+			this.tiers = this.constructTiers(packs);
 		}
 	}
 
-	private parseJsonFile(filePath: string): any {
-		try {
-			const jsonData = fs.readFileSync(filePath, 'utf-8');
-			return JSON.parse(jsonData);
-		} catch (error: unknown) {
-            if (error instanceof Error) console.error(`Failed to parse JSON from ${filePath}: ${error.message}`);
-            else console.error(`Unknown error occured while parsing ${filePath}.`)
-			return [];
-		}
-	}
+	private constructTiers(packs: number[]): Tier[] {
+		let petData = pets.filter(pet => pet.packs?.some(pack => packs.includes(pack)));
+		let foodData = foods.filter(food => food.packs?.some(pack => packs.includes(pack)));
 
-	private constructTiers(petData: Pet[], foodData: Food[]): Tier[] {
 		const tiers: Tier[] = [];
 
 		for (let i: number = 1; i <= 6; i++) {

@@ -196,7 +196,7 @@
 	{ "name": "Farmer Pig", "id": 694, "tier": 3, "packs": [1] },
 	{ "name": "Pony", "id": 560, "tier": 3, "packs": [1] },
 	{ "name": "Quail Chick", "id": 778, "tier": 3, "packs": [1] },
-	{ "name": "QuetzalCoatlus", "id": 751, "tier": 3, "packs": [1] },
+	{ "name": "Quetzalcoatlus", "id": 751, "tier": 3, "packs": [1] },
 	{ "name": "Sarcastic Fringehead", "id": 763, "tier": 3, "packs": [1] },
 	{ "name": "Sugar Glider", "id": 705, "tier": 3, "packs": [1] },
 	{ "name": "Great Potoo", "id": 697, "tier": 3, "packs": [6] },

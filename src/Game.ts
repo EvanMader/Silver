@@ -107,19 +107,37 @@ export class Game {
 
 		this.deck.constructGroups();
 
+		let timer: number = 90000;
 		for (let i = 0; i < 6; i++) {
 			await this.channel.send(`__**TIER ${order[i] + 1}**__\n`);
-			if (this.getTurn()) await this.banGroup(this.player1, order[i]);
-			else await this.banGroup(this.player2, order[i]);
-			this.turn++;
+			try {
+				if (this.getTurn()) await this.banGroup(this.player1, order[i], timer);
+				else await this.banGroup(this.player2, order[i], timer);
+				this.turn++;
+			} catch (e) {
+				this.deleteGame(gameList);
+				return;
+			}
 
-			if (this.getTurn()) await this.pickGroup(this.player1, order[i]);
-			else await this.pickGroup(this.player2, order[i]);
-			this.turn++;
+			try {
+				if (this.getTurn()) await this.pickGroup(this.player1, order[i], timer);
+				else await this.pickGroup(this.player2, order[i], timer);
+				this.turn++;
+			} catch (e) {
+				this.deleteGame(gameList);
+				return;
+			}
 
-			if (this.getTurn()) await this.pickGroup(this.player1, order[i]);
-			else await this.pickGroup(this.player2, order[i]);
-			this.turn++;
+			timer = 60000;
+
+			try {
+				if (this.getTurn()) await this.pickGroup(this.player1, order[i], timer);
+				else await this.pickGroup(this.player2, order[i], timer);
+				this.turn++;
+			} catch (e) {
+				this.deleteGame(gameList);
+				return;
+			}
 		}
 
 		await this.channel.send(`<@${ this.player1.user.id }> Pack Code:`);
@@ -127,11 +145,10 @@ export class Game {
 		await this.channel.send(`<@${ this.player2.user.id }> Pack Code:`);
 		await this.channel.send(`${ this.player2.deck.getCode() }`);
 
-		await this.endGame();
-		gameList.splice(gameList.findIndex(game => game === this, 1));
+		await this.endGame(gameList);
 	}
 
-	private async endGame() {
+	private async endGame(gameList: Game[]) {
 		await this.channel.send(`Please send "!end" to close the game.`);
 
 		await new Promise<void>((resolve, reject) => {
@@ -146,23 +163,27 @@ export class Game {
 
 			collector?.on('collect', async (message: Message) => {
 				if (message.content.startsWith("!end")) {
-					this.channel.delete()
+					this.deleteGame(gameList);
 					resolve();
 				}
 			});
 		});
 	}
 
-	private async banGroup(player: Player, tier: number) {
+	private deleteGame(gameList: Game[]) {
+		gameList.splice(gameList.findIndex(game => game === this, 1));
+		this.channel.delete()
+	}
+
+	private async banGroup(player: Player, tier: number, timerLength: number) {
 		await this.channel.send(
 			`<@${player.user.id}> Select one tier ${
 				tier + 1
-			} group to ban!\nGroups Left:\n${this.getGroups(
+			} group to **ban**!\nGroups Left:\n${this.getGroups(
 				this.deck.groups[tier]
 			)}`
 		);
 
-		const timerLength = 60000;
 		let remainingTime = timerLength; 
 		const countdown = await this.channel.send(`You have ${Math.floor(remainingTime / 1000)} seconds remaining.`);
 
@@ -185,8 +206,7 @@ export class Game {
 				const choice: number = parseInt(message.content.substring(5));
 				return (
 					message.author.id === player.user.id &&
-					message.channel.id === this.channel.id &&
-					(message.content.startsWith('!ban ') || message.content.startsWith("!team"))
+					message.channel.id === this.channel.id
 				);
 			};
 
@@ -196,6 +216,7 @@ export class Game {
 			});
 
 			collector?.on('collect', async (message: Message) => {
+				if (message.content.startsWith('!end')) collector.stop('end');
 				if (message.content.startsWith("!team")) {
 					await this.channel.send(`<@${player.user.id}> Current Team:\n${this.getGroups(player.deck.tiers)}`)
 				}
@@ -212,12 +233,14 @@ export class Game {
 
 			collector?.on('end', async (collected, reason) => {
 				clearTimeout(interval);
-				countdown.delete();
+				await countdown.delete();
 				if (reason === 'time') {
 					await this.channel.send('You took too long to respond!\nNothing was banned.');
 					resolve();
 				} else if (reason === 'Success') {
 					resolve();
+				} else if (reason == 'end') {
+					reject();
 				} else {
 					console.log('Collector ended due to:', reason);
 				}
@@ -227,10 +250,9 @@ export class Game {
 		});
 	}
 
-	private async pickGroup(player: Player, tier: number) {
-		await this.channel.send(`<@${player.user.id}> Select one tier ${ tier + 1 } group to pick!\nGroups Left:\n${this.getGroups( this.deck.groups[tier])}`);
+	private async pickGroup(player: Player, tier: number, timerLength: number) {
+		await this.channel.send(`<@${player.user.id}> Select one tier ${ tier + 1 } group to **pick**!\nGroups Left:\n${this.getGroups( this.deck.groups[tier])}`);
 
-		const timerLength = 60000;
 		let remainingTime = timerLength; 
 		const countdown = await this.channel.send(`You have ${Math.floor(remainingTime / 1000)} seconds remaining.`);
 
@@ -253,8 +275,7 @@ export class Game {
 				const choice: number = parseInt(message.content.substring(6));
 				return (
 					message.author.id === player.user.id &&
-					message.channel.id === this.channel.id &&
-					(message.content.startsWith('!pick ') || message.content.startsWith('!team'))
+					message.channel.id === this.channel.id
 				);
 			};
 
@@ -264,6 +285,7 @@ export class Game {
 			});
 
 			collector?.on('collect', async (message: Message) => {
+				if (message.content.startsWith('!end')) collector.stop('end');
 				if (message.content.startsWith("!team")) {
 					await this.channel.send(`<@${player.user.id}> Current Team:\n${this.getGroups(player.deck.tiers)}`)
 				}
@@ -279,13 +301,15 @@ export class Game {
 
 			collector?.on('end', async (collected, reason) => {
 				clearTimeout(interval);
-				countdown.delete();
+				await countdown.delete();
 				if (reason === 'time') {
 					await this.channel.send('You took too long to respond!');
 					await this.pickOption(player, tier, 0);
 					resolve();
 				} else if (reason === 'Success') {
 					resolve();
+				} else if (reason == 'end') {
+					reject();
 				} else {
 					console.log('Collector ended due to:', reason);
 				}
