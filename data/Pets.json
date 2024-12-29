@@ -237,7 +237,7 @@
 	{ "name": "Donkey", "id": 111, "tier": 4, "packs": [3] },
 	{ "name": "Hawk", "id": 127, "tier": 4, "packs": [3] },
 	{ "name": "Platypus", "id": 159, "tier": 4, "packs": [3] },
-	{ "name": "Mantis", "id": 126, "tier": 4, "packs": [3] },
+	{ "name": "PrayingMantis", "id": 126, "tier": 4, "packs": [3] },
 	{ "name": "Jerboa", "id": 199, "tier": 4, "packs": [1] },
 	{ "name": "Lynx", "id": 200, "tier": 4, "packs": [1] },
 	{ "name": "Seagull", "id": 128, "tier": 4, "packs": [1] },
