@@ -54,7 +54,7 @@ export class Deck {
 			);
 
             const tierGroups: Tier[] = [];
-            let numGroups: number = Math.floor(this.tiers[i].pets.length / 3);
+            let numGroups: number = Math.floor(shuffledPets.length / 3);
 
             for (let j = 0; j < numGroups; j++) {
                 if (j >= 7) break;

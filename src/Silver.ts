@@ -1,11 +1,10 @@
 import 'dotenv/config';
 import { Client } from 'discord.js';
-import registerCommands from './RegisterCommands';
+import registerCommandsOnGuild from './RegisterCommands';
 import { handleCommands } from './HandleCommands';
 import { sendMessageWithButtons } from './Roles';
 import * as fs from 'fs';
-import { Food, Pet, Tier } from './Deck';
-import sharp = require('sharp');
+import { Food, Pet } from './Deck';
 
 const TOKEN = process.env.TOKEN;
 if (TOKEN === undefined) {
@@ -17,9 +16,9 @@ const client = new Client({
 	intents: ['Guilds', 'GuildMessages', 'GuildMembers', 'MessageContent'],
 });
 
-client.on('ready', (c) => {
+client.on('ready', async (c) => {
 	console.log(`${c.user.username} is online.`);
-	registerCommands(TOKEN, client.application!.id);
+	registerCommandsOnGuild(TOKEN, client.application!.id);
 	handleCommands(client);
 	//sendMessageWithButtons('1321488575145050122', client);
 });
