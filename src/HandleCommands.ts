@@ -1,9 +1,18 @@
 import { Client, Events, Guild, GuildMemberRoleManager } from 'discord.js';
 import { Game } from './Game';
 import { Player } from './Player';
+import { GameStandard } from './GameStandard';
 
-const matchmakingQueue: Player[] = [];
+interface Challenge {
+	challenger: Player;
+	challenged: Player;
+	type: string;
+	timeoutId: NodeJS.Timeout;
+}
+
+export const matchmakingQueue: Player[] = [];
 export const gameList: Game[] = [];
+export const challenges: Challenge[] = [];
 
 export function handleCommands(client: Client) {
 	client.on(Events.InteractionCreate, async (interaction) => {
@@ -34,12 +43,13 @@ export function handleCommands(client: Client) {
 		}
 
 		if (interaction.isChatInputCommand()) {
-			const player: Player = await Player.create(
-				interaction.user,
-				interaction.guild!
-			);
-
 			if (interaction.channelId === '1320464242654314557') {
+
+				const player: Player = await Player.create(
+					interaction.user,
+					interaction.guild!
+				);
+
 				if (interaction.commandName === 'queue') {
 					if (matchmakingQueue.some((p) => player.user === p.user)) {
 						await interaction.reply(
@@ -50,8 +60,7 @@ export function handleCommands(client: Client) {
 					if (
 						gameList.find(
 							(g) =>
-								g.player1.user.equals(player.user) ||
-								g.player2.user.equals(player.user)
+								g.players.some(p => p.user.id === player.user.id)
 						) !== undefined
 					) {
 						await interaction.reply(
@@ -72,12 +81,12 @@ export function handleCommands(client: Client) {
 						`Added ${interaction.user.displayName} to the queue.`
 					);
 					if (matchmakingQueue.length >= 2) {
-						const game: Game = await Game.create(
-							matchmakingQueue.shift()!,
-							matchmakingQueue.shift()!,
+						const game: GameStandard = await GameStandard.create(
+							[matchmakingQueue.shift()!, matchmakingQueue.shift()!],
 							client,
 							guild
 						);
+
 						gameList.push(game);
 					}
 				}
@@ -99,6 +108,132 @@ export function handleCommands(client: Client) {
 					await interaction.reply(
 						`Removed ${interaction.user.displayName} from the queue.`
 					);
+				}
+
+				if (interaction.commandName == 'challenge') {
+					const challenged: Player = await Player.create(
+						interaction.options.getUser('user', true),
+						interaction.guild!
+					);
+					const gameType = interaction.options.getString('type', true);
+
+					if (player.user.id === challenged.user.id) {
+						await interaction.reply("You can't challenge yourself.");
+						return;
+					}
+
+					const isPlayerInGame = gameList.some(
+						(game) => game.players.some((p) => p.user.id === player.user.id || p.user.id === challenged.user.id)
+					);
+
+					if (isPlayerInGame) {
+						await interaction.reply("Either you or the challenged player is already in a game.");
+						return;
+					}
+
+					const existingChallenge = challenges.find(
+							(c) => (c.challenger.user.id === player.user.id && c.challenged.user.id === challenged.user.id)
+						);
+					if (existingChallenge) {
+						await interaction.reply("You already have an open challenge to that player.");
+						return;
+					}
+
+					const timeoutId = setTimeout(() => {
+						const index = challenges.findIndex( (c) => c.challenger.user.id === player.user.id && c.challenged.user.id === challenged.user.id);
+
+						if (index !== -1) {
+							challenges.splice(index, 1);
+							interaction.followUp(`<@${player.user.id}> your challenge to ${challenged.user.displayName} has expired.`);
+						}
+					}, 5 * 60 * 1000);
+
+					challenges.push({
+						challenger: player,
+						challenged: challenged,
+						type: gameType,
+						timeoutId: timeoutId
+					})
+
+					interaction.reply(`You challenged <@${challenged.user.id}> to a ${gameType} game.`);
+				}
+
+				if (interaction.commandName == 'retract') {
+					const challenged: Player = await Player.create(
+						interaction.options.getUser('user', true),
+						interaction.guild!
+					);
+
+					const existingChallenge = challenges.find(
+							(c) => (c.challenger.user.id === player.user.id && c.challenged.user.id === challenged.user.id)
+						);
+
+					if (!existingChallenge) {
+						interaction.reply("You don't have an open challenge to that player.");
+						return;
+					}
+
+					const index = challenges.findIndex( (c) => c.challenger.user.id === player.user.id && c.challenged.user.id === challenged.user.id);
+					challenges.splice(index, 1);
+
+					interaction.reply(`You retracted your challenge to ${challenged.user.displayName}.`);
+				}
+
+				if (interaction.commandName == 'accept') {
+					const challenger: Player = await Player.create(
+						interaction.options.getUser('user', true),
+						interaction.guild!
+					);
+
+					const existingChallenge = challenges.find(
+							(c) => (c.challenger.user.id === challenger.user.id && c.challenged.user.id === player.user.id)
+						);
+
+					if (!existingChallenge) {
+						interaction.reply("You don't have an open challenge from that player.");
+						return;
+					}
+
+					const isPlayerInGame = gameList.some(
+						(game) => game.players.some((p) => p.user.id === player.user.id || p.user.id === challenger.user.id)
+					);
+
+					if (isPlayerInGame) {
+						await interaction.reply("Either you or the challenged player is already in a game.");
+						return;
+					}
+
+					const index = challenges.findIndex( (c) => c.challenger.user.id === challenger.user.id && c.challenged.user.id === player.user.id);
+					const chall: Challenge = challenges.splice(index, 1)[0];
+
+
+					if (chall.type === 'standard') {
+						const game: GameStandard = await GameStandard.create([challenger, player], client, guild);
+						gameList.push(game);
+					}
+
+					interaction.reply(`You accepted the challenge from ${challenger.user.displayName}.`);
+				}
+
+				if (interaction.commandName == 'decline') {
+					const challenger: Player = await Player.create(
+						interaction.options.getUser('user', true),
+						interaction.guild!
+					);
+
+					const existingChallenge = challenges.find(
+							(c) => (c.challenger.user.id === challenger.user.id && c.challenged.user.id === player.user.id)
+						);
+
+					if (!existingChallenge) {
+						interaction.reply("You don't have an open challenge from that player.");
+						return;
+					}
+
+					const index = challenges.findIndex( (c) => c.challenger.user.id === challenger.user.id && c.challenged.user.id === player.user.id);
+					challenges.splice(index, 1);
+
+					interaction.reply(`You declined the challenge from ${challenger.user.displayName}.`);
 				}
 			}
 		}
