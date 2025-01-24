@@ -67,6 +67,8 @@ export class GameStandard extends Game {
 	private async startGame() {
 		this.endGame(gameList);
 
+		this.turn = Math.floor(Math.random() * this.players.length);
+
 		for (let i = 0; i < 6; i++) {
 			for (let j = 0; j < 7; j++) {
 				let index = Math.floor(

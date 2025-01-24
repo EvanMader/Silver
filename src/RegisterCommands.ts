@@ -71,6 +71,10 @@ export default async function registerCommandsGlobally(
                 },
             ],
         },
+        {
+            name: "create",
+            description: "create a lobby",
+        },
     ];
 
     const rest = new REST({ version: '10' }).setToken(token);

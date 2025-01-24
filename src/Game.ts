@@ -31,7 +31,7 @@ export class Game {
 		this.guild = guild;
 		this.channel = channel;
 		this.client = client;
-		this.turn = Math.floor(Math.random() * players.length);
+		this.turn = 0;
 
 		const packs = players.reduce((common, player) => {
 			return common.filter(num => player.packs.includes(num));
@@ -59,7 +59,6 @@ export class Game {
 	public getTurn() {
 		return this.turn % this.players.length;
 	}
-
 
 	protected async endGame(gameList: Game[]) {
 		const closeGameButton = new ButtonBuilder()

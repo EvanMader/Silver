@@ -46,17 +46,16 @@ export class Deck {
 		return tiers;
 	}
 
-
     public getCode(): string {
         const output = {
 			Title: 'Silver',
 			Minion: 36,
-			Minions: this.tiers.map((tier) =>
+			Minions: this.tiers.flatMap((tier) =>
 				tier.pets.map((pet) => pet.id)
-			).flat(),
-			Spells: this.tiers.map((tier) =>
+			),
+			Spells: this.tiers.flatMap((tier) =>
 				tier.foods.map((food) => food.id)
-			).flat(),
+			),
 		};
         return JSON.stringify(output);
     }

@@ -2,6 +2,7 @@ import { Client, Events, Guild, GuildMemberRoleManager } from 'discord.js';
 import { Game } from './Game';
 import { Player } from './Player';
 import { GameStandard } from './GameStandard';
+import { Lobby } from './Lobby';
 
 interface Challenge {
 	challenger: Player;
@@ -234,6 +235,19 @@ export function handleCommands(client: Client) {
 					challenges.splice(index, 1);
 
 					interaction.reply(`You declined the challenge from ${challenger.user.displayName}.`);
+				}
+
+				if (interaction.commandName == 'create') {
+					await interaction.reply(
+						`${interaction.user.displayName} created a lobby.`
+					);
+					const game: Lobby = await Lobby.create(
+						player,
+						client,
+						guild
+					);
+
+					gameList.push(game);
 				}
 			}
 		}
