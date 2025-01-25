@@ -284,20 +284,6 @@ export class Lobby extends Game {
 								});
 							} else {
 								if (collector.ended) return;
-								if (pick)
-									await this.pickOption(
-										player,
-										tier,
-										parseInt(selectedValue),
-										selected
-									);
-								else
-									await this.banOption(
-										player,
-										tier,
-										parseInt(selectedValue),
-										selected
-									);
 								collector.stop('Success');
 							}
 						} else if (
@@ -330,6 +316,20 @@ export class Lobby extends Game {
 					await this.channel.send('You took too long to respond!');
 					resolve();
 				} else if (reason === 'Success') {
+					if (pick)
+						await this.pickOption(
+							player,
+							tier,
+							parseInt(selectedValue!),
+							selected
+						);
+					else
+						await this.banOption(
+							player,
+							tier,
+							parseInt(selectedValue!),
+							selected
+						);
 					resolve();
 				} else {
 					console.log(

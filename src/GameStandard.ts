@@ -286,20 +286,7 @@ export class GameStandard extends Game {
 									ephemeral: true,
 								});
 							} else {
-								if (pick)
-									await this.pickOption(
-										player,
-										tier,
-										parseInt(selectedValue),
-										selected
-									);
-								else
-									await this.banOption(
-										player,
-										tier,
-										parseInt(selectedValue),
-										selected
-									);
+								if (collector.ended) return;
 								collector.stop('Success');
 							}
 						} else if (
@@ -339,6 +326,20 @@ export class GameStandard extends Game {
 					await this.channel.send('You took too long to respond!');
 					resolve();
 				} else if (reason === 'Success') {
+					if (pick)
+						await this.pickOption(
+							player,
+							tier,
+							parseInt(selectedValue!),
+							selected
+						);
+					else
+						await this.banOption(
+							player,
+							tier,
+							parseInt(selectedValue!),
+							selected
+						);
 					resolve();
 				} else {
 					console.log('Rejected select group for the following reason: ', reason);
