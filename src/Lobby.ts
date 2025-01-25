@@ -10,6 +10,7 @@ import {
 	PermissionFlagsBits,
 	StringSelectMenuBuilder,
 	TextChannel,
+	Attachment,
 } from 'discord.js';
 import { Game } from './Game';
 import { Player } from './Player';
@@ -160,7 +161,12 @@ export class Lobby extends Game {
 		}
 
 		for (const player of this.players) {
-			await this.channel.send(`<@${player.user.id}> Pack Code:`);
+			await this.channel.send({
+				content: `<@${player.user.id}> Pack Code:`,
+				files: [{
+					attachment: await this.getTeam(player.deck.tiers)
+				}]
+			});
 			await this.channel.send(`${player.deck.getCode()}`);
 		}
 
@@ -255,15 +261,22 @@ export class Lobby extends Game {
 			collector.on(
 				'collect',
 				async (interaction: MessageComponentInteraction) => {
-					if (interaction.user.id !== player.user.id) {
-						await interaction.reply({
-							content: 'This is not your selection menu!',
-							ephemeral: true,
-						});
-						return;
-					}
-
 					try {
+						if ( interaction.isButton() &&
+							interaction.customId === 'team_button'
+						) {
+							await interaction.reply(await this.sendTeam(player));
+							return;
+						}
+
+						if (interaction.user.id !== player.user.id) {
+							await interaction.reply({
+								content: 'This is not your selection menu!',
+								ephemeral: true,
+							});
+							return;
+						}
+
 						if (
 							interaction.isStringSelectMenu() &&
 							interaction.customId === 'group_select'
@@ -286,13 +299,7 @@ export class Lobby extends Game {
 								if (collector.ended) return;
 								collector.stop('Success');
 							}
-						} else if (
-							interaction.isButton() &&
-							interaction.customId === 'team_button'
-						) {
-							await this.sendTeam(player);
-							await interaction.deferUpdate();
-                        }
+						}
 					} catch (error) {
 						console.error('Error handling interaction:', error);
 						if (!interaction.replied && !interaction.deferred) {

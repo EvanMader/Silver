@@ -135,12 +135,21 @@ export class Game {
 	}
 
 	protected async sendTeam(player: Player) {
-		this.channel.send({
-			content: `${player.user.displayName}'s Team:`,
-			files: [{
-				attachment: await this.getTeam(player.deck.tiers)
-			}]
-		});
+		try {
+			const teamImage = await this.getTeam(player.deck.tiers);
+			return {
+				content: `${player.user.displayName}'s Team:`,
+				files: [
+					{
+						attachment: teamImage,
+						ephemeral: true
+					}
+				]
+			};
+		} catch (error) {
+			console.error('Error generating team image:', error);
+			throw new Error('Failed to generate the team image.');
+		}
 	}
 
 	protected getNames(array: Pet[] | Food[]): string {
