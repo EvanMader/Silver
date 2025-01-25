@@ -99,7 +99,6 @@ export class Game {
 		this.channel.delete();
 	}
 
-
 	protected async pickOption(player: Player, tier: number, choice: number, selected: number[]) {
 		if (choice === -1) {
 			const availableChoices = Array.from({ length: this.deck.groups[tier].length }, (_, i) => i)
@@ -141,10 +140,10 @@ export class Game {
 				content: `${player.user.displayName}'s Team:`,
 				files: [
 					{
-						attachment: teamImage,
-						ephemeral: true
+						attachment: teamImage
 					}
-				]
+				],
+				ephemeral: true
 			};
 		} catch (error) {
 			console.error('Error generating team image:', error);

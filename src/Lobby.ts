@@ -390,7 +390,6 @@ export class Lobby extends Game {
             components: [buttonRow]
         })
 
-
         await new Promise<void>((resolve) => {
             const collector = startMessage.createMessageComponentCollector();
 
