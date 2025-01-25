@@ -327,4 +327,22 @@ export class Game {
 
 		return resultBuffer;
 	}
+
+	protected async removePlayersWrite() {
+		for (const player of this.players) {
+			this.channel.permissionOverwrites.edit(player.user.id, {
+				SendMessages: false,
+				AddReactions: false
+			})
+		}
+	}
+
+	protected async addPlayersWrite() {
+		for (const player of this.players) {
+			this.channel.permissionOverwrites.edit(player.user.id, {
+				SendMessages: true,
+				AddReactions: true
+			})
+		}
+	}
 }

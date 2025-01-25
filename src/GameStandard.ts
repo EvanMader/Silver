@@ -67,64 +67,65 @@ export class GameStandard extends Game {
 	private async startGame() {
 		this.endGame(gameList);
 
-		this.turn = Math.floor(Math.random() * this.players.length);
+		try {
+			this.turn = Math.floor(Math.random() * this.players.length);
 
-		for (let i = 0; i < 6; i++) {
-			for (let j = 0; j < 7; j++) {
+			for (let i = 0; i < 6; i++) {
+				for (let j = 0; j < 7; j++) {
+					let index = Math.floor(
+						Math.random() * this.deck.tiers[i].pets.length
+					);
+					this.player1.deck.tiers[i].pets.push(
+						this.deck.tiers[i].pets[index]
+					);
+					this.player2.deck.tiers[i].pets.push(
+						this.deck.tiers[i].pets[index]
+					);
+					this.deck.tiers[i].pets.splice(index, 1);
+				}
+
 				let index = Math.floor(
-					Math.random() * this.deck.tiers[i].pets.length
+					Math.random() * this.deck.tiers[i].foods.length
 				);
-				this.player1.deck.tiers[i].pets.push(
-					this.deck.tiers[i].pets[index]
+				if (
+					i === 4 &&
+					this.deck.tiers[i].foods.findIndex(
+						(food) => food.name === 'Chocolate'
+					) != -1
+				)
+					index = this.deck.tiers[i].foods.findIndex(
+						(food) => food.name === 'Chocolate'
+					);
+				this.player1.deck.tiers[i].foods.push(
+					this.deck.tiers[i].foods[index]
 				);
-				this.player2.deck.tiers[i].pets.push(
-					this.deck.tiers[i].pets[index]
+				this.player2.deck.tiers[i].foods.push(
+					this.deck.tiers[i].foods[index]
 				);
-				this.deck.tiers[i].pets.splice(index, 1);
+				this.deck.tiers[i].foods.splice(index, 1);
+			}
+			await this.channel.send({
+				content: '__**Randomly Selected 7 Pets and 1 Food Per Tier**__',
+				files: [
+					{
+						attachment: await this.getTeam(this.player1.deck.tiers),
+					},
+				],
+			});
+
+			let order: number[] = [0, 1, 2, 3, 4, 5];
+			for (let i = order.length - 1; i > 0; i--) {
+				const randomIndex = Math.floor(Math.random() * (i + 1));
+				[order[i], order[randomIndex]] = [order[randomIndex], order[i]];
 			}
 
-			let index = Math.floor(
-				Math.random() * this.deck.tiers[i].foods.length
-			);
-			if (
-				i === 4 &&
-				this.deck.tiers[i].foods.findIndex(
-					(food) => food.name === 'Chocolate'
-				) != -1
-			)
-				index = this.deck.tiers[i].foods.findIndex(
-					(food) => food.name === 'Chocolate'
-				);
-			this.player1.deck.tiers[i].foods.push(
-				this.deck.tiers[i].foods[index]
-			);
-			this.player2.deck.tiers[i].foods.push(
-				this.deck.tiers[i].foods[index]
-			);
-			this.deck.tiers[i].foods.splice(index, 1);
-		}
-		await this.channel.send({
-			content: '__**Randomly Selected 7 Pets and 1 Food Per Tier**__',
-			files: [
-				{
-					attachment: await this.getTeam(this.player1.deck.tiers),
-				},
-			],
-		});
+			this.constructGroups(this.deck);
 
-		let order: number[] = [0, 1, 2, 3, 4, 5];
-		for (let i = order.length - 1; i > 0; i--) {
-			const randomIndex = Math.floor(Math.random() * (i + 1));
-			[order[i], order[randomIndex]] = [order[randomIndex], order[i]];
-		}
+			let timer: number = 90000;
+			for (let i = 0; i < 6; i++) {
+				let selected: number[] = [];
+				await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
-		this.constructGroups(this.deck);
-
-		let timer: number = 90000;
-		for (let i = 0; i < 6; i++) {
-			let selected: number[] = [];
-			await this.channel.send(`__# TIER ${order[i] + 1}__`);
-			try {
 				if (this.getTurn())
 					await this.selectGroup(
 						this.player1,
@@ -142,31 +143,32 @@ export class GameStandard extends Game {
 						selected
 					);
 				this.turn++;
-			} catch (e) { return; }
 
-			try {
 				if (this.getTurn())
 					await this.selectGroup(this.player1, order[i], timer, true, selected);
 				else
 					await this.selectGroup(this.player2, order[i], timer, true, selected);
 				this.turn++;
-			} catch (e) { return; }
 
-			timer = 60000;
+				timer = 60000;
 
-			try {
 				if (this.getTurn())
 					await this.selectGroup(this.player1, order[i], timer, true, selected);
 				else
 					await this.selectGroup(this.player2, order[i], timer, true, selected);
 				this.turn++;
-			} catch (e) { return; }
-		}
+			}
 
-		await this.channel.send(`<@${this.player1.user.id}> Pack Code:`);
-		await this.channel.send(`${this.player1.deck.getCode()}`);
-		await this.channel.send(`<@${this.player2.user.id}> Pack Code:`);
-		await this.channel.send(`${this.player2.deck.getCode()}`);
+			for (const player of this.players) {
+				await this.channel.send({
+					content: `<@${player.user.id}> Pack Code:`,
+					files: [{
+						attachment: await this.getTeam(player.deck.tiers)
+					}]
+				});
+				await this.channel.send(`${player.deck.getCode()}`);
+			}
+		} catch (e) { return; }
 
 		await this.endGame(gameList);
 	}
@@ -265,7 +267,9 @@ export class GameStandard extends Game {
 							interaction.isButton() &&
 							interaction.customId === 'team_button'
 						) {
-							interaction.reply(await this.sendTeam(player));
+							await interaction.deferReply({ ephemeral: true });
+							const teamResponse = await this.sendTeam(player);
+							await interaction.editReply(teamResponse);
 							return;
 						} else if (
 							interaction.isButton() &&
