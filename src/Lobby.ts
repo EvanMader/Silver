@@ -133,8 +133,8 @@ export class Lobby extends Game {
 
 		this.constructGroups(this.deck);
 
-		let timer: number = 45000;
 		for (let i = 0; i < 6; i++) {
+			let timer: number = 5000 * this.players.length;
 			await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
 			for (let j = 0; j < this.players.length; j++) {
@@ -146,6 +146,7 @@ export class Lobby extends Game {
 						true
 					);
 					this.turn++;
+					timer -= 5000;
 				} catch (e) {
 					return;
 				}
