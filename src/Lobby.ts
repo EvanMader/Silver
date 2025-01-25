@@ -134,7 +134,7 @@ export class Lobby extends Game {
 		this.constructGroups(this.deck);
 
 		for (let i = 0; i < 6; i++) {
-			let timer: number = 5000 * this.players.length;
+			let timer: number = 5000 * (this.players.length + 2);
 			await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
 			for (let j = 0; j < this.players.length; j++) {
@@ -346,7 +346,7 @@ export class Lobby extends Game {
 			let numGroups: number = Math.floor(shuffledPets.length / 3);
 
 			for (let j = 0; j < numGroups; j++) {
-				if (j >= this.players.length + 3) break;
+				if (j >= this.players.length + 2) break;
 				const shuffledFoods = [...deck.tiers[i].foods].sort(
 					() => Math.random() - 0.5
 				);
