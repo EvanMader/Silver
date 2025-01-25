@@ -134,7 +134,7 @@ export class Lobby extends Game {
 		this.constructGroups(this.deck);
 
 		for (let i = 0; i < 6; i++) {
-			let timer: number = 5000 * (this.players.length + 2);
+			let timer: number = 5000 * (this.players.length + 2) + 5000;
 			await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
 			for (let j = 0; j < this.players.length; j++) {
