@@ -111,10 +111,10 @@ export class Lobby extends Game {
 			this.deck.tiers[i].foods.splice(index, 1);
 		}
 		await this.channel.send({
-			content: '__**Randomly Selected 7 Pets and 1 Food Per Tier**__',
+			content: '__**Randomly Selected 7 Pets and 1 Food Per Tier**__ \n Draft begins in 10 seconds',
 			files: [
 				{
-					attachment: await this.getImage(this.players[0].deck.tiers),
+					attachment: await this.getTeam(this.players[0].deck.tiers),
 				},
 			],
 		});
@@ -130,10 +130,12 @@ export class Lobby extends Game {
             .sort((a, b) => a.sort - b.sort)
             .map(({ player }) => player);
 
-
 		this.constructGroups(this.deck);
 
+		await new Promise(resolve => setTimeout(resolve, 10000));
+
 		for (let i = 0; i < 6; i++) {
+			let selected: number[] = [];
 			let timer: number = 5000 * (this.players.length + 2) + 5000;
 			await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
@@ -143,7 +145,8 @@ export class Lobby extends Game {
 						this.players[this.getTurn()],
 						order[i],
 						timer,
-						true
+						true,
+						selected
 					);
 					this.turn++;
 					timer -= 5000;
@@ -168,7 +171,8 @@ export class Lobby extends Game {
 		player: Player,
 		tier: number,
 		timerLength: number,
-		pick: boolean
+		pick: boolean,
+		selected: number[]
 	) {
 		let remainingTime = timerLength;
 		const countdown = await this.channel.send({
@@ -179,7 +183,7 @@ export class Lobby extends Game {
 			)} seconds remaining.`,
 			files: [
 				{
-					attachment: await this.getImage(this.deck.groups[tier]),
+					attachment: await this.getGroups(this.deck.groups[tier], selected),
 				},
 			],
 		});
@@ -209,10 +213,12 @@ export class Lobby extends Game {
 			.setCustomId('group_select')
 			.setPlaceholder('Select a group...')
 			.addOptions(
-				this.deck.groups[tier].map((group, index) => ({
-					label: `Group ${index + 1}`,
-					value: `${index}`,
-				}))
+				this.deck.groups[tier]
+					.map((group, index) => ({
+						label: String.fromCharCode(65 + index),
+						value: `${index}`,
+					}))
+					.filter(option => !selected.includes(Number(option.value)))
 			);
 
 		const submitButton = new ButtonBuilder()
@@ -282,13 +288,15 @@ export class Lobby extends Game {
 									await this.pickOption(
 										player,
 										tier,
-										parseInt(selectedValue) + 1
+										parseInt(selectedValue),
+										selected
 									);
 								else
 									await this.banOption(
 										player,
 										tier,
-										parseInt(selectedValue) + 1
+										parseInt(selectedValue),
+										selected
 									);
 								collector.stop('Success');
 							}
@@ -318,7 +326,7 @@ export class Lobby extends Game {
 				await actionMessage.delete().catch(() => null);
 
 				if (reason === 'time') {
-					if (pick) await this.pickOption(player, tier, 0);
+					if (pick) await this.pickOption(player, tier, -1, selected);
 					await this.channel.send('You took too long to respond!');
 					resolve();
 				} else if (reason === 'Success') {

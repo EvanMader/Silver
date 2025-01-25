@@ -100,8 +100,16 @@ export class Game {
 	}
 
 
-	protected async pickOption(player: Player, tier: number, choice: number) {
-		let grouping: Tier = this.deck.groups[tier].splice(choice - 1, 1)[0];
+	protected async pickOption(player: Player, tier: number, choice: number, selected: number[]) {
+		if (choice === -1) {
+			const availableChoices = Array.from({ length: this.deck.groups[tier].length }, (_, i) => i)
+				.filter(num => !selected.includes(num));
+
+			choice = availableChoices[Math.floor(Math.random() * availableChoices.length)];
+		}
+
+		selected.push(choice);
+		let grouping: Tier = this.deck.groups[tier][choice];
 
 		for (const pet of grouping.pets) {
 			player.deck.tiers[tier].pets.push(pet);
@@ -116,8 +124,9 @@ export class Game {
 		);
 	}
 
-	protected async banOption(player: Player, tier: number, choice: number) {
-		let grouping: Tier = this.deck.groups[tier].splice(choice - 1, 1)[0];
+	protected async banOption(player: Player, tier: number, choice: number, selected: number[]) {
+		selected.push(choice);
+		let grouping: Tier = this.deck.groups[tier][choice];
 		await this.channel.send(
 			`${this.getNames(grouping.pets)} ${this.getNames(
 				grouping.foods
@@ -129,7 +138,7 @@ export class Game {
 		this.channel.send({
 			content: `${player.user.displayName}'s Team:`,
 			files: [{
-				attachment: await this.getImage(player.deck.tiers)
+				attachment: await this.getTeam(player.deck.tiers)
 			}]
 		});
 	}
@@ -138,7 +147,7 @@ export class Game {
 		return '[' + array.map((obj) => obj.name).join(', ') + ']';
 	}
 
-	protected async getImage(tiers: Tier[]): Promise<Buffer> {
+	protected async getTeam(tiers: Tier[]): Promise<Buffer> {
 		const overlayWidth = 46;
 		const overlayHeight = 46;
 		const horizontalSpacing = 3;
@@ -214,6 +223,95 @@ export class Game {
 				width: 800,
 				height:
 					tiers.length * (overlayHeight + verticalSpacing) +
+					verticalSpacing,
+			})
+			.composite(allOverlays)
+			.toBuffer();
+
+		return resultBuffer;
+	}
+
+	protected async getGroups(tiers: Tier[], selected: number[]): Promise<Buffer> {
+		const overlayWidth = 46;
+		const overlayHeight = 46;
+		const horizontalSpacing = 3;
+		const verticalSpacing = 15;
+
+		const allOverlays: { input: Buffer; top: number; left: number }[] = [];
+		let skipped = 0;
+
+		for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
+			if (selected.includes(tierIndex)) {
+				skipped += 1;
+				continue;
+			}
+			const { pets, foods } = tiers[tierIndex];
+
+			const tierTop =
+				(tierIndex - skipped) * (overlayHeight + verticalSpacing) + verticalSpacing;
+
+			const numberImagePath = `./data/sprites/numbers/${
+				String.fromCharCode(97 + tierIndex)
+			}.png`;
+			const numberBuffer = await sharp(numberImagePath)
+				.resize(overlayWidth, overlayHeight)
+				.toBuffer();
+
+			allOverlays.push({
+				input: numberBuffer,
+				top: tierTop,
+				left: 15,
+			});
+
+			const petOverlays = pets.map(async (Pet, petIndex) => {
+				const sanitizedPet = Pet.name
+					.replace(/[^a-zA-Z0-9]/g, '')
+					.replace(/\s+/g, '');
+				const imgPath = `./data/sprites/pets/${sanitizedPet}.png`;
+
+				const petLeft =
+					(petIndex + 1) * (overlayWidth + horizontalSpacing) + 10;
+
+				return sharp(imgPath)
+					.resize(overlayWidth, overlayHeight, { fit: 'contain', background: {r: 0, g: 0, b: 0, alpha: 0} })
+					.toBuffer()
+					.then((buffer) => ({
+						input: buffer,
+						top: tierTop,
+						left: petLeft,
+					}));
+			});
+
+			const foodOverlays = foods.map(async (Food, foodIndex) => {
+				const sanitizedFood = Food.name
+					.replace(/[^a-zA-Z0-9]/g, '')
+					.replace(/\s+/g, '');
+				const imgPath = `./data/sprites/foods/${sanitizedFood}.png`;
+
+				const foodLeft =
+					(foodIndex + 11) * (overlayWidth + horizontalSpacing) + 32;
+
+				return sharp(imgPath)
+					.resize(overlayWidth, overlayHeight, { fit: 'contain', background: {r: 0, g: 0, b: 0, alpha: 0} })
+					.toBuffer()
+					.then((buffer) => ({
+						input: buffer,
+						top: tierTop,
+						left: foodLeft,
+					}));
+			});
+
+			const tierOverlays = [...petOverlays, ...foodOverlays];
+			const tierBuffers = await Promise.all(tierOverlays);
+
+			allOverlays.push(...tierBuffers);
+		}
+
+		const resultBuffer = await sharp('./data/sprites/PetViewer.png')
+			.resize({
+				width: 800,
+				height:
+					(tiers.length - skipped) * (overlayHeight + verticalSpacing) +
 					verticalSpacing,
 			})
 			.composite(allOverlays)

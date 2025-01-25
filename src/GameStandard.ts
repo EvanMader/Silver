@@ -107,7 +107,7 @@ export class GameStandard extends Game {
 			content: '__**Randomly Selected 7 Pets and 1 Food Per Tier**__',
 			files: [
 				{
-					attachment: await this.getImage(this.player1.deck.tiers),
+					attachment: await this.getTeam(this.player1.deck.tiers),
 				},
 			],
 		});
@@ -122,6 +122,7 @@ export class GameStandard extends Game {
 
 		let timer: number = 90000;
 		for (let i = 0; i < 6; i++) {
+			let selected: number[] = [];
 			await this.channel.send(`__# TIER ${order[i] + 1}__`);
 			try {
 				if (this.getTurn())
@@ -129,23 +130,25 @@ export class GameStandard extends Game {
 						this.player1,
 						order[i],
 						timer,
-						false
+						false,
+						selected
 					);
 				else
 					await this.selectGroup(
 						this.player2,
 						order[i],
 						timer,
-						false
+						false,
+						selected
 					);
 				this.turn++;
 			} catch (e) { return; }
 
 			try {
 				if (this.getTurn())
-					await this.selectGroup(this.player1, order[i], timer, true);
+					await this.selectGroup(this.player1, order[i], timer, true, selected);
 				else
-					await this.selectGroup(this.player2, order[i], timer, true);
+					await this.selectGroup(this.player2, order[i], timer, true, selected);
 				this.turn++;
 			} catch (e) { return; }
 
@@ -153,9 +156,9 @@ export class GameStandard extends Game {
 
 			try {
 				if (this.getTurn())
-					await this.selectGroup(this.player1, order[i], timer, true);
+					await this.selectGroup(this.player1, order[i], timer, true, selected);
 				else
-					await this.selectGroup(this.player2, order[i], timer, true);
+					await this.selectGroup(this.player2, order[i], timer, true, selected);
 				this.turn++;
 			} catch (e) { return; }
 		}
@@ -172,7 +175,8 @@ export class GameStandard extends Game {
 		player: Player,
 		tier: number,
 		timerLength: number,
-		pick: boolean
+		pick: boolean,
+		selected: number[]
 	) {
 		let remainingTime = timerLength;
 		const countdown = await this.channel.send({
@@ -181,7 +185,7 @@ export class GameStandard extends Game {
 			} group to ${pick ? 'pick' : 'ban'}! You have ${Math.floor(remainingTime / 1000)} seconds remaining.`,
 			files: [
 				{
-					attachment: await this.getImage(this.deck.groups[tier]),
+					attachment: await this.getGroups(this.deck.groups[tier], selected),
 				},
 			],
 		});
@@ -207,10 +211,12 @@ export class GameStandard extends Game {
 			.setCustomId('group_select')
 			.setPlaceholder('Select a group...')
 			.addOptions(
-				this.deck.groups[tier].map((group, index) => ({
-					label: `Group ${index + 1}`,
-					value: `${index}`,
-				}))
+				this.deck.groups[tier]
+					.map((group, index) => ({
+						label: String.fromCharCode(65 + index),
+						value: `${index}`,
+					}))
+					.filter(option => !selected.includes(Number(option.value)))
 			);
 
 		const submitButton = new ButtonBuilder()
@@ -284,13 +290,15 @@ export class GameStandard extends Game {
 									await this.pickOption(
 										player,
 										tier,
-										parseInt(selectedValue) + 1
+										parseInt(selectedValue),
+										selected
 									);
 								else
 									await this.banOption(
 										player,
 										tier,
-										parseInt(selectedValue) + 1
+										parseInt(selectedValue),
+										selected
 									);
 								collector.stop('Success');
 							}
@@ -327,7 +335,7 @@ export class GameStandard extends Game {
 				await actionMessage.delete().catch(() => null);
 
 				if (reason === 'time') {
-					if (pick) await this.pickOption(player, tier, 0);
+					if (pick) await this.pickOption(player, tier, -1, selected);
 					await this.channel.send('You took too long to respond!');
 					resolve();
 				} else if (reason === 'Success') {
