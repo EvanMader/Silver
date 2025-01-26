@@ -63,11 +63,11 @@ export class Lobby extends Game {
 		const current: Lobby = new Lobby(players, client, guild, channel);
 		current.joinLeaveGame();
         await current.waitStart();
-		current.startGame();
+		current.startGame(4, 5000, 5000, true);
 		return current;
 	}
 
-	private async startGame() {
+	private async startGame(numberOfDraft: number, timerPerGroup: number, timerBase: number, randomizeTiers: true) {
 		try {
 			this.joinLeaveMessage?.delete().catch(() => null);
 			this.endGame(gameList).catch(() => null);
@@ -80,7 +80,7 @@ export class Lobby extends Game {
 			this.packs = packs;
 
 			for (let i = 0; i < 6; i++) {
-				for (let j = 0; j < 7; j++) {
+				for (let j = 0; j < 10 - numberOfDraft; j++) {
 					let index = Math.floor(
 						Math.random() * this.deck.tiers[i].pets.length
 					);
@@ -112,7 +112,7 @@ export class Lobby extends Game {
 				this.deck.tiers[i].foods.splice(index, 1);
 			}
 			await this.channel.send({
-				content: '__**Randomly Selected 7 Pets and 1 Food Per Tier**__ \nDraft begins in 10 seconds',
+				content: `__**Randomly Selected ${10 - numberOfDraft} Pets and 1 Food Per Tier**__ \nDraft begins in 10 seconds`,
 				files: [
 					{
 						attachment: await this.getTeam(this.players[0].deck.tiers),
@@ -121,9 +121,11 @@ export class Lobby extends Game {
 			});
 
 			let order: number[] = [0, 1, 2, 3, 4, 5];
-			for (let i = order.length - 1; i > 0; i--) {
-				const randomIndex = Math.floor(Math.random() * (i + 1));
-				[order[i], order[randomIndex]] = [order[randomIndex], order[i]];
+			if (randomizeTiers) {
+				for (let i = order.length - 1; i > 0; i--) {
+					const randomIndex = Math.floor(Math.random() * (i + 1));
+					[order[i], order[randomIndex]] = [order[randomIndex], order[i]];
+				}
 			}
 
 			this.players = this.players
@@ -131,14 +133,14 @@ export class Lobby extends Game {
 				.sort((a, b) => a.sort - b.sort)
 				.map(({ player }) => player);
 
-			this.constructGroups(this.deck);
+			this.constructGroups(this.deck, numberOfDraft);
 
 			this.removePlayersWrite();
 			await new Promise(resolve => setTimeout(resolve, 10000));
 
 			for (let i = 0; i < 6; i++) {
 				let selected: number[] = [];
-				let timer: number = 5000 * (this.players.length + 2) + 5000;
+				let timer: number = timerPerGroup * (this.players.length + 2) + timerBase;
 				await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
 				for (let j = 0; j < this.players.length; j++) {
@@ -150,7 +152,7 @@ export class Lobby extends Game {
 						selected
 					);
 					this.turn++;
-					timer -= 5000;
+					timer -= timerPerGroup;
 				}
 
 				this.players = this.players.reverse();
@@ -350,24 +352,20 @@ export class Lobby extends Game {
 		});
 	}
 
-	private constructGroups(deck: Deck) {
+	private constructGroups(deck: Deck, numberOfDraft: number) {
 		for (let i = 0; i < 6; i++) {
-			let shuffledPets = [...deck.tiers[i].pets]
-				.sort(() => Math.random() - 0.5)
-				.filter(
-					(pet) => pet.name !== 'Snail' && pet.name !== 'Penguin' && pet.name !== 'Werewolf'
-				);
-
 			const tierGroups: Tier[] = [];
-			let numGroups: number = Math.floor(shuffledPets.length / 3);
 
-			for (let j = 0; j < numGroups; j++) {
-				if (j >= this.players.length + 2) break;
-				const shuffledFoods = [...deck.tiers[i].foods].sort(
-					() => Math.random() - 0.5
-				);
-				const selectedPets = shuffledPets.splice(0, 3);
-				const selectedFoods = shuffledFoods.splice(0, 2);
+			const validPets = deck.tiers[i].pets.filter(
+				(pet) => pet.name !== 'Snail' && pet.name !== 'Penguin' && pet.name !== 'Werewolf'
+			);
+
+			for (let j = 0; j < this.players.length + 2; j++) {
+				const shuffledPets = [...validPets].sort(() => Math.random() - 0.5);
+				const shuffledFoods = [...deck.tiers[i].foods].sort(() => Math.random() - 0.5);
+
+				const selectedPets = shuffledPets.slice(0, numberOfDraft);
+				const selectedFoods = shuffledFoods.slice(0, 2);
 
 				tierGroups.push({ pets: selectedPets, foods: selectedFoods });
 			}
