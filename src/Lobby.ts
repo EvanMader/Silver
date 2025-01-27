@@ -17,7 +17,14 @@ import { Deck, Tier } from './Deck';
 
 export class Lobby extends Game {
 	host: Player;
-    joinLeaveMessage: Message | null;
+	lobbyMessages: Message[];
+	numberOfPetsDraft: number;
+	numberOfFoodsDraft: number;
+	timerPerGroup: number;
+	timerBase: number;
+	timeToLook: number;
+	randomizeTiers: boolean;
+	allowTalking: boolean;
 
 	public constructor(
 		players: Player[],
@@ -27,7 +34,14 @@ export class Lobby extends Game {
 	) {
 		super(players, client, guild, channel);
 		this.host = players[0];
-        this.joinLeaveMessage = null;
+		this.lobbyMessages = [];
+		this.numberOfPetsDraft = 4;
+		this.numberOfFoodsDraft = 2;
+		this.timerPerGroup = 5000;
+		this.timerBase = 5000;
+		this.timeToLook = 10000;
+		this.randomizeTiers = true;
+		this.allowTalking = false;
 	}
 
 	public static async create(
@@ -61,25 +75,29 @@ export class Lobby extends Game {
 
 		const current: Lobby = new Lobby(players, client, guild, channel);
 		current.joinLeaveGame();
-        await current.waitStart();
-		current.startGame(4, 5000, 5000, true);
+		current.lobbyOptions();
+		await current.waitStart();
+		current.startGame();
 		return current;
 	}
 
-	private async startGame(numberOfDraft: number, timerPerGroup: number, timerBase: number, randomizeTiers: true) {
+	private async startGame() {
 		try {
-			this.joinLeaveMessage?.delete().catch(() => null);
+			for (const message of this.lobbyMessages) {
+				message.delete().catch(() => null);
+			}
 			this.endGame().catch(() => null);
+			if (!this.allowTalking) this.removePlayersWrite();
 
 			const packs = this.players.reduce((common, player) => {
-				return common.filter(num => player.packs.includes(num));
+				return common.filter((num) => player.packs.includes(num));
 			}, this.players[0].packs);
 
 			this.deck = new Deck(true, packs);
 			this.packs = packs;
 
 			for (let i = 0; i < 6; i++) {
-				for (let j = 0; j < 10 - numberOfDraft; j++) {
+				for (let j = 0; j < 10 - this.numberOfPetsDraft; j++) {
 					let index = Math.floor(
 						Math.random() * this.deck.tiers[i].pets.length
 					);
@@ -91,39 +109,52 @@ export class Lobby extends Game {
 					this.deck.tiers[i].pets.splice(index, 1);
 				}
 
-				let index = Math.floor(
-					Math.random() * this.deck.tiers[i].foods.length
-				);
-				if (
-					i === 4 &&
-					this.deck.tiers[i].foods.findIndex(
-						(food) => food.name === 'Chocolate'
-					) != -1
-				)
-					index = this.deck.tiers[i].foods.findIndex(
-						(food) => food.name === 'Chocolate'
+				for (let j = 0; j < 3 - this.numberOfFoodsDraft; j++) {
+					let index = Math.floor(
+						Math.random() * this.deck.tiers[i].foods.length
 					);
-				for (const player of this.players) {
-					player.deck.tiers[i].foods.push(
-						this.deck.tiers[i].foods[index]
-					);
+					if (
+						i === 4 &&
+						this.deck.tiers[i].foods.findIndex(
+							(food) => food.name === 'Chocolate'
+						) != -1
+					)
+						index = this.deck.tiers[i].foods.findIndex(
+							(food) => food.name === 'Chocolate'
+						);
+					for (const player of this.players) {
+						player.deck.tiers[i].foods.push(
+							this.deck.tiers[i].foods[index]
+						);
+					}
+					this.deck.tiers[i].foods.splice(index, 1);
 				}
-				this.deck.tiers[i].foods.splice(index, 1);
 			}
 			await this.channel.send({
-				content: `__**Randomly Selected ${10 - numberOfDraft} Pets and 1 Food Per Tier**__ \nDraft begins in 10 seconds`,
+				content: `__**Randomly Selected ${
+					10 - this.numberOfPetsDraft
+				} Pets and ${
+					3 - this.numberOfFoodsDraft
+				} Food Per Tier**__ \nDraft begins in ${
+					this.timeToLook / 1000
+				} seconds`,
 				files: [
 					{
-						attachment: await this.getTeam(this.players[0].deck.tiers),
+						attachment: await this.getTeam(
+							this.players[0].deck.tiers
+						),
 					},
 				],
 			});
 
 			let order: number[] = [0, 1, 2, 3, 4, 5];
-			if (randomizeTiers) {
+			if (this.randomizeTiers) {
 				for (let i = order.length - 1; i > 0; i--) {
 					const randomIndex = Math.floor(Math.random() * (i + 1));
-					[order[i], order[randomIndex]] = [order[randomIndex], order[i]];
+					[order[i], order[randomIndex]] = [
+						order[randomIndex],
+						order[i],
+					];
 				}
 			}
 
@@ -132,14 +163,17 @@ export class Lobby extends Game {
 				.sort((a, b) => a.sort - b.sort)
 				.map(({ player }) => player);
 
-			this.constructGroups(this.deck, numberOfDraft);
+			this.constructGroups();
 
-			this.removePlayersWrite();
-			await new Promise(resolve => setTimeout(resolve, 10000));
+			await new Promise((resolve) =>
+				setTimeout(resolve, this.timeToLook)
+			);
 
 			for (let i = 0; i < 6; i++) {
 				let selected: number[] = [];
-				let timer: number = timerPerGroup * (this.players.length + 2) + timerBase;
+				let timer: number =
+					this.timerPerGroup * (this.players.length + 2) +
+					this.timerBase;
 				await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
 				for (let j = 0; j < this.players.length; j++) {
@@ -151,7 +185,7 @@ export class Lobby extends Game {
 						selected
 					);
 					this.turn++;
-					timer -= timerPerGroup;
+					timer -= this.timerPerGroup;
 				}
 
 				this.players = this.players.reverse();
@@ -161,16 +195,20 @@ export class Lobby extends Game {
 			for (const player of this.players) {
 				await this.channel.send({
 					content: `<@${player.user.id}> Pack Code:`,
-					files: [{
-						attachment: await this.getTeam(player.deck.tiers)
-					}]
+					files: [
+						{
+							attachment: await this.getTeam(player.deck.tiers),
+						},
+					],
 				});
 				await this.channel.send(`${player.deck.getCode()}`);
 			}
 
-			this.addPlayersWrite();
+			if (!this.allowTalking) this.addPlayersWrite();
 			await this.endGame();
-		} catch (e) { return; }
+		} catch (e) {
+			return;
+		}
 	}
 
 	protected async selectGroup(
@@ -189,7 +227,10 @@ export class Lobby extends Game {
 			)} seconds remaining.`,
 			files: [
 				{
-					attachment: await this.getGroups(this.deck.groups[tier], selected),
+					attachment: await this.getGroups(
+						this.deck.groups[tier],
+						selected
+					),
 				},
 			],
 		});
@@ -224,7 +265,9 @@ export class Lobby extends Game {
 						label: String.fromCharCode(65 + index),
 						value: `${index}`,
 					}))
-					.filter(option => !selected.includes(Number(option.value)))
+					.filter(
+						(option) => !selected.includes(Number(option.value))
+					)
 			);
 
 		const submitButton = new ButtonBuilder()
@@ -243,7 +286,7 @@ export class Lobby extends Game {
 			);
 		const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
 			submitButton,
-			teamButton,
+			teamButton
 		);
 
 		const actionMessage = await this.channel.send({
@@ -262,7 +305,8 @@ export class Lobby extends Game {
 				'collect',
 				async (interaction: MessageComponentInteraction) => {
 					try {
-						if ( interaction.isButton() &&
+						if (
+							interaction.isButton() &&
 							interaction.customId === 'team_button'
 						) {
 							await interaction.deferReply({ ephemeral: true });
@@ -350,150 +394,462 @@ export class Lobby extends Game {
 		});
 	}
 
-	private constructGroups(deck: Deck, numberOfDraft: number) {
+	private async lobbyOptions() {
+		const createDropdown = (
+			customId: string,
+			placeholder: string,
+			options: { label: string; value: string }[]
+		) => {
+			const selectMenu = new StringSelectMenuBuilder()
+				.setCustomId(customId)
+				.setPlaceholder(placeholder)
+				.addOptions(options);
+
+			return selectMenu;
+		};
+
+		const numberOfPetsDraftOptions = Array.from({ length: 11 }, (_, i) => ({
+			label: `${i}`,
+			value: `${i}`,
+		}));
+
+		const numberOfPetsDraftDropdown = createDropdown(
+			'number_of_draft',
+			`Number of pets to draft: ${this.numberOfPetsDraft}`,
+			numberOfPetsDraftOptions
+		);
+
+		const numberOfFoodsDraftOptions = Array.from({ length: 4 }, (_, i) => ({
+			label: `${i}`,
+			value: `${i}`,
+		}));
+
+		const numberOfFoodsDraftDropdown = createDropdown(
+			'number_of_food',
+			`Number of food to draft: ${this.numberOfFoodsDraft}`,
+			numberOfFoodsDraftOptions
+		);
+
+		const timerPerGroupOptions = Array.from({ length: 5 }, (_, i) => ({
+			label: `${i * 5}`,
+			value: `${i * 5}`,
+		}));
+
+		const timerPerGroupDropdown = createDropdown(
+			'timer_per_group',
+			`Timer increment per group (seconds): ${this.timerPerGroup / 1000}`,
+			timerPerGroupOptions
+		);
+
+		const timerBaseOptions = Array.from({ length: 19 }, (_, i) => ({
+			label: `${i * 5}`,
+			value: `${i * 5}`,
+		}));
+
+		const timerBaseDropdown = createDropdown(
+			'timer_base',
+			`Base timer length (seconds): ${this.timerBase / 1000}`,
+			timerBaseOptions
+		);
+
+		const timeToLookOptions = Array.from({ length: 13 }, (_, i) => ({
+			label: `${i * 10}`,
+			value: `${i * 10}`,
+		}));
+
+		const timeToLookDropdown = createDropdown(
+			'time_to_look',
+			`Time to look before draft (seconds): ${this.timeToLook / 1000}`,
+			timeToLookOptions
+		);
+
+		const randomizeTiersOptions = [
+			{ label: 'True', value: 'true' },
+			{ label: 'False', value: 'false' },
+		];
+
+		const randomizeTiersDropdown = createDropdown(
+			'randomize_tiers',
+			`Randomize tiers: ${this.randomizeTiers}`,
+			randomizeTiersOptions
+		);
+
+		const allowTalkingOptions = [
+			{ label: 'True', value: 'true' },
+			{ label: 'False', value: 'false' },
+		];
+
+		const allowTalkingDropdown = createDropdown(
+			'allow_talking',
+			`Allow talking: ${this.allowTalking}`,
+			allowTalkingOptions
+		);
+
+		let numberOfPetsDraftRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				numberOfPetsDraftDropdown
+			);
+		let numberOfFoodsDraftRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				numberOfFoodsDraftDropdown
+			);
+		let timerPerGroupRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				timerPerGroupDropdown
+			);
+		let timerBaseRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				timerBaseDropdown
+			);
+		let timeToLookRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				timeToLookDropdown
+			);
+		let randomizeTiersRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				randomizeTiersDropdown
+			);
+		let allowTalkingRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				allowTalkingDropdown
+			);
+
+		const settingsMessage1 = await this.channel.send({
+			components: [
+				numberOfPetsDraftRow,
+				numberOfFoodsDraftRow,
+				timerPerGroupRow,
+				timerBaseRow,
+				timeToLookRow,
+			],
+		});
+		const settingsMessage2 = await this.channel.send({
+			components: [randomizeTiersRow, allowTalkingRow],
+		});
+		this.lobbyMessages.push(settingsMessage1);
+		this.lobbyMessages.push(settingsMessage2);
+
+		const collector1 = settingsMessage1.createMessageComponentCollector();
+		const collector2 = settingsMessage2.createMessageComponentCollector();
+
+		collector1.on(
+			'collect',
+			async (interaction: MessageComponentInteraction) => {
+				if (!interaction.isStringSelectMenu()) return;
+				if (interaction.user != this.host.user) {
+					interaction.reply({
+						content:
+							"You don't have permission to change the game settings.",
+						ephemeral: true,
+					});
+					return;
+				}
+				await interaction.deferUpdate();
+
+				switch (interaction.customId) {
+					case 'number_of_draft':
+						this.numberOfPetsDraft = parseInt(
+							interaction.values[0],
+							10
+						);
+						numberOfPetsDraftRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'number_of_draft',
+									`Number of pets to Draft: ${this.numberOfPetsDraft}`,
+									numberOfPetsDraftOptions
+								)
+							);
+						break;
+
+					case 'number_of_food':
+						this.numberOfFoodsDraft = parseInt(
+							interaction.values[0],
+							10
+						);
+						numberOfFoodsDraftRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'number_of_food',
+									`Number of food to draft: ${this.numberOfFoodsDraft}`,
+									numberOfFoodsDraftOptions
+								)
+							);
+						break;
+
+					case 'timer_per_group':
+						this.timerPerGroup =
+							parseInt(interaction.values[0], 10) * 1000;
+						timerPerGroupRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'timer_per_group',
+									`Timer increment per group (seconds): ${
+										this.timerPerGroup / 1000
+									}`,
+									timerPerGroupOptions
+								)
+							);
+						break;
+
+					case 'timer_base':
+						this.timerBase =
+							parseInt(interaction.values[0], 10) * 1000;
+						timerBaseRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'timer_base',
+									`Base timer length (seconds): ${
+										this.timerBase / 1000
+									}`,
+									timerBaseOptions
+								)
+							);
+						break;
+
+					case 'time_to_look':
+						this.timeToLook =
+							parseInt(interaction.values[0], 10) * 1000;
+						timeToLookRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'time_to_look',
+									`Time to look before draft (seconds): ${
+										this.timeToLook / 1000
+									}`,
+									timeToLookOptions
+								)
+							);
+						break;
+				}
+
+				const updatedRows = [
+					numberOfPetsDraftRow,
+					numberOfFoodsDraftRow,
+					timerPerGroupRow,
+					timerBaseRow,
+					timeToLookRow,
+				];
+				await interaction.message
+					.edit({
+						components: updatedRows,
+					})
+					.catch(() => null);
+			}
+		);
+
+		collector2.on(
+			'collect',
+			async (interaction: MessageComponentInteraction) => {
+				if (!interaction.isStringSelectMenu()) return;
+				if (interaction.user != this.host.user) {
+					interaction.reply({
+						content:
+							"You don't have permission to change the game settings.",
+						ephemeral: true,
+					});
+					return;
+				}
+				await interaction.deferUpdate();
+
+				switch (interaction.customId) {
+					case 'randomize_tiers':
+						this.randomizeTiers = interaction.values[0] === 'true';
+						randomizeTiersRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'randomize_tiers',
+									`Randomize tiers: ${this.randomizeTiers}`,
+									randomizeTiersOptions
+								)
+							);
+						break;
+
+					case 'allow_talking':
+						this.allowTalking = interaction.values[0] === 'true';
+						allowTalkingRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'allow_talking',
+									`Allow talking: ${this.allowTalking}`,
+									allowTalkingOptions
+								)
+							);
+						break;
+				}
+
+				const updatedRows = [randomizeTiersRow, allowTalkingRow];
+				await interaction.message
+					.edit({
+						components: updatedRows,
+					})
+					.catch(() => null);
+			}
+		);
+	}
+
+	private constructGroups() {
 		for (let i = 0; i < 6; i++) {
 			const tierGroups: Tier[] = [];
 
-			const validPets = deck.tiers[i].pets.filter(
-				(pet) => pet.name !== 'Snail' && pet.name !== 'Penguin' && pet.name !== 'Werewolf'
+			const validPets = this.deck.tiers[i].pets.filter(
+				(pet) =>
+					pet.name !== 'Snail' &&
+					pet.name !== 'Penguin' &&
+					pet.name !== 'Werewolf'
 			);
 
 			for (let j = 0; j < this.players.length + 2; j++) {
-				const shuffledPets = [...validPets].sort(() => Math.random() - 0.5);
-				const shuffledFoods = [...deck.tiers[i].foods].sort(() => Math.random() - 0.5);
+				const shuffledPets = [...validPets].sort(
+					() => Math.random() - 0.5
+				);
+				const shuffledFoods = [...this.deck.tiers[i].foods].sort(
+					() => Math.random() - 0.5
+				);
 
-				const selectedPets = shuffledPets.slice(0, numberOfDraft);
-				const selectedFoods = shuffledFoods.slice(0, 2);
+				const selectedPets = shuffledPets.slice(0, this.numberOfPetsDraft);
+				const selectedFoods = shuffledFoods.slice(0, this.numberOfFoodsDraft);
 
 				tierGroups.push({ pets: selectedPets, foods: selectedFoods });
 			}
 
-			deck.groups.push(tierGroups);
+			this.deck.groups.push(tierGroups);
 		}
 	}
 
-    async waitStart() {
-        const startGameButton = new ButtonBuilder()
-            .setCustomId('start_game_button')
-            .setLabel('Start Game')
-            .setStyle(ButtonStyle.Success)
+	async waitStart() {
+		await new Promise((resolve) =>
+				setTimeout(resolve, 3000)
+			);
 
-        const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            startGameButton
-        )
-        
-        let startMessage = await this.channel.send({
-            content: `Host click this button to start the game:`,
-            components: [buttonRow]
-        })
+		const startGameButton = new ButtonBuilder()
+			.setCustomId('start_game_button')
+			.setLabel('Start Game')
+			.setStyle(ButtonStyle.Success);
 
-        await new Promise<void>((resolve) => {
-            const collector = startMessage.createMessageComponentCollector();
+		const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+			startGameButton
+		);
 
-            collector.on(
-                'collect',
-                async (interaction: MessageComponentInteraction) => {
-                    if (interaction.user.id == this.host.user.id) {
-                        collector.stop();
-                    } else {
-                        interaction.reply({
-                            content: "You don't have permission to access this button.",
-                            ephemeral: true
-                        })
-                    }
-                }
-            )
+		let startMessage = await this.channel.send({
+			components: [buttonRow],
+		});
 
-            collector.on(
-                'end',
-                async () => {
-                    await startMessage.delete().catch(() => null);
-                    resolve();
-                }
-            )
-        });
-    }
+		await new Promise<void>((resolve) => {
+			const collector = startMessage.createMessageComponentCollector();
 
-    async joinLeaveGame() {
-        const joinGameButton = new ButtonBuilder()
-            .setCustomId('join_game_button')
-            .setLabel('Join Game')
-            .setStyle(ButtonStyle.Success);
-
-        const leaveGameButton = new ButtonBuilder()
-            .setCustomId('leave_game_button')
-            .setLabel('Leave Game')
-            .setStyle(ButtonStyle.Danger);
-
-        const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            joinGameButton,
-            leaveGameButton
-        );
-
-        this.joinLeaveMessage = await this.channel.send({
-            content: `Click the buttons to join or leave the game:`,
-            components: [buttonRow],
-        });
-
-        await new Promise<void>((resolve, reject) => {
-            const collector = this.joinLeaveMessage?.createMessageComponentCollector();
-
-            collector?.on(
-                'collect',
-                async (interaction: MessageComponentInteraction) => {
-                    const userId = interaction.user.id;
-
-                    if (interaction.customId === 'join_game_button') {
-                        if (
-                            this.players.some(
-                                (player) => player.user.id === userId
-                            )
-                        ) {
-                            await interaction.reply({
-                                content: 'You are already in the game!',
-                                ephemeral: true,
-                            });
-                            return;
-                        }
-
-                        this.players.push(await Player.create(interaction.user, this.guild));
-						await this.channel.permissionOverwrites.edit(interaction.user.id, {
-							SendMessages: true,
-							AddReactions: true,
+			collector.on(
+				'collect',
+				async (interaction: MessageComponentInteraction) => {
+					if (interaction.user.id == this.host.user.id) {
+						collector.stop();
+					} else {
+						interaction.reply({
+							content:
+								"You don't have permission to access this button.",
+							ephemeral: true,
 						});
-                        await interaction.reply({
-                            content: `${interaction.user.displayName} has joined the lobby.`,
-                        });
-                    } else if (interaction.customId === 'leave_game_button') {
-                        const playerIndex = this.players.findIndex(
-                            (player) => player.user.id === userId
-                        );
+					}
+				}
+			);
 
-                        if (playerIndex === -1) {
-                            await interaction.reply({
-                                content: 'You are not in the game!',
-                                ephemeral: true,
-                            });
-                            return;
-                        }
+			collector.on('end', async () => {
+				await startMessage.delete().catch(() => null);
+				resolve();
+			});
+		});
+	}
 
-                        if (userId === this.host.user.id) {
-                            await interaction.deferReply();
-                            this.deleteGame();
-                            return;
-                        }
+	async joinLeaveGame() {
+		const joinGameButton = new ButtonBuilder()
+			.setCustomId('join_game_button')
+			.setLabel('Join Game')
+			.setStyle(ButtonStyle.Success);
 
-                        this.players.splice(playerIndex, 1);
-						await this.channel.permissionOverwrites.edit(interaction.user.id, {
-							SendMessages: false,
-							AddReactions: false,
+		const leaveGameButton = new ButtonBuilder()
+			.setCustomId('leave_game_button')
+			.setLabel('Leave Game')
+			.setStyle(ButtonStyle.Danger);
+
+		const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+			joinGameButton,
+			leaveGameButton
+		);
+
+		const joinLeaveMessage: Message = await this.channel.send({
+			components: [buttonRow],
+		});
+
+		this.lobbyMessages.push(joinLeaveMessage);
+
+		await new Promise<void>((resolve, reject) => {
+			const collector =
+				joinLeaveMessage?.createMessageComponentCollector();
+
+			collector?.on(
+				'collect',
+				async (interaction: MessageComponentInteraction) => {
+					const userId = interaction.user.id;
+
+					if (interaction.customId === 'join_game_button') {
+						if (
+							this.players.some(
+								(player) => player.user.id === userId
+							)
+						) {
+							await interaction.reply({
+								content: 'You are already in the game!',
+								ephemeral: true,
+							});
+							return;
+						}
+
+						this.players.push(
+							await Player.create(interaction.user, this.guild)
+						);
+						await this.channel.permissionOverwrites.edit(
+							interaction.user.id,
+							{
+								SendMessages: true,
+								AddReactions: true,
+							}
+						);
+						await interaction.reply({
+							content: `${interaction.user.displayName} has joined the lobby.`,
 						});
-                        await interaction.reply({
-                            content: `${interaction.user.displayName} has left the lobby.`,
-                        });
-                    }
-                }
-            );
-        });
-    }
+					} else if (interaction.customId === 'leave_game_button') {
+						const playerIndex = this.players.findIndex(
+							(player) => player.user.id === userId
+						);
+
+						if (playerIndex === -1) {
+							await interaction.reply({
+								content: 'You are not in the game!',
+								ephemeral: true,
+							});
+							return;
+						}
+
+						if (userId === this.host.user.id) {
+							await interaction.deferReply();
+							this.deleteGame();
+							return;
+						}
+
+						this.players.splice(playerIndex, 1);
+						await this.channel.permissionOverwrites.edit(
+							interaction.user.id,
+							{
+								SendMessages: false,
+								AddReactions: false,
+							}
+						);
+						await interaction.reply({
+							content: `${interaction.user.displayName} has left the lobby.`,
+						});
+					}
+				}
+			);
+		});
+	}
 }

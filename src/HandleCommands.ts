@@ -19,13 +19,13 @@ export function handleCommands(client: Client) {
 				if (hasRole) {
 					await roleManager.remove(role);
 					await interaction.reply({
-						content: `The pack ${role} has been deactivated.`,
+						content: `The role ${role} has been deactivated.`,
 						ephemeral: true,
 					});
 				} else {
 					await roleManager.add(role);
 					await interaction.reply({
-						content: `The pack ${role} has been activated.`,
+						content: `The role ${role} has been activated.`,
 						ephemeral: true,
 					});
 				}

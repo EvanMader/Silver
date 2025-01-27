@@ -18,17 +18,16 @@ export default async function registerCommandsGlobally(
 
         const existingCommands = await rest.get(Routes.applicationCommands(client_id)) as any[];
 
-        const commandsAreDifferent =
-            JSON.stringify(existingCommands.map(cmd => ({ name: cmd.name, description: cmd.description }))) !==
-            JSON.stringify(commands);
-
-        if (commandsAreDifferent) {
-            console.log("Updating global (/) commands...");
-            await rest.put(Routes.applicationCommands(client_id), { body: commands });
-            console.log("Successfully updated global (/) commands.");
-        } else {
-            console.log("No changes detected. Skipping global command update.");
+        for (const command of existingCommands) {
+            if (!commands.find(newCmd => newCmd.name === command.name)) {
+                console.log(`Deleting command: ${command.name}`);
+                await rest.delete(Routes.applicationCommand(client_id, command.id));
+            }
         }
+
+        console.log("Updating global (/) commands...");
+        await rest.put(Routes.applicationCommands(client_id), { body: commands });
+        console.log("Successfully updated global (/) commands.");
     } catch (error) {
         console.error("Error updating global commands:", error);
     }
