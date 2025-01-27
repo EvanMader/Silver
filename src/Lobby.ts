@@ -87,7 +87,7 @@ export class Lobby extends Game {
 				message.delete().catch(() => null);
 			}
 			this.endGame().catch(() => null);
-			if (!this.allowTalking) this.removePlayersWrite();
+			if (!this.allowTalking) this.removePlayersWrite().catch(() => null);
 
 			const packs = this.players.reduce((common, player) => {
 				return common.filter((num) => player.packs.includes(num));
@@ -204,7 +204,7 @@ export class Lobby extends Game {
 				await this.channel.send(`${player.deck.getCode()}`);
 			}
 
-			if (!this.allowTalking) this.addPlayersWrite();
+			if (!this.allowTalking) this.addPlayersWrite().catch(() => null);
 			await this.endGame();
 		} catch (e) {
 			return;
