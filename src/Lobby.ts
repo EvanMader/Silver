@@ -13,7 +13,6 @@ import {
 } from 'discord.js';
 import { Game } from './Game';
 import { Player } from './Player';
-import { gameList } from './HandleCommands';
 import { Deck, Tier } from './Deck';
 
 export class Lobby extends Game {
@@ -70,7 +69,7 @@ export class Lobby extends Game {
 	private async startGame(numberOfDraft: number, timerPerGroup: number, timerBase: number, randomizeTiers: true) {
 		try {
 			this.joinLeaveMessage?.delete().catch(() => null);
-			this.endGame(gameList).catch(() => null);
+			this.endGame().catch(() => null);
 
 			const packs = this.players.reduce((common, player) => {
 				return common.filter(num => player.packs.includes(num));
@@ -170,7 +169,7 @@ export class Lobby extends Game {
 			}
 
 			this.addPlayersWrite();
-			await this.endGame(gameList);
+			await this.endGame();
 		} catch (e) { return; }
 	}
 
@@ -335,7 +334,6 @@ export class Lobby extends Game {
 						);
 					else
 						await this.banOption(
-							player,
 							tier,
 							parseInt(selectedValue!),
 							selected
@@ -481,7 +479,7 @@ export class Lobby extends Game {
 
                         if (userId === this.host.user.id) {
                             await interaction.deferReply();
-                            this.deleteGame(gameList);
+                            this.deleteGame();
                             return;
                         }
 

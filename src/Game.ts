@@ -10,7 +10,6 @@ import {
 import { Tier, Pet, Food, Deck } from './Deck';
 import { Player } from './Player';
 import sharp = require('sharp');
-import { challenges, matchmakingQueue } from './HandleCommands';
 
 export class Game {
 	players: Player[];
@@ -39,28 +38,13 @@ export class Game {
 
 		this.deck = new Deck(true, packs);
 		this.packs = packs;
-
-		const playerIds = new Set(players.map(player => player.user.id));
-		for (let i = challenges.length - 1; i >= 0; i--) {
-			const challenge = challenges[i];
-			if (playerIds.has(challenge.challenger.user.id) || playerIds.has(challenge.challenged.user.id)) {
-				clearTimeout(challenge.timeoutId);
-				challenges.splice(i, 1);
-			}
-		}
-		
-		for (let i = matchmakingQueue.length - 1; i >= 0; i--) {
-			if (playerIds.has(matchmakingQueue[i].user.id)) {
-			matchmakingQueue.splice(i, 1);
-			}
-		}
 	}
 
 	public getTurn() {
 		return this.turn % this.players.length;
 	}
 
-	protected async endGame(gameList: Game[]) {
+	protected async endGame() {
 		const closeGameButton = new ButtonBuilder()
 			.setCustomId('close_game_button')
 			.setLabel('Close Game')
@@ -89,13 +73,12 @@ export class Game {
 					return;
 				}
 
-				this.deleteGame(gameList);
+				this.deleteGame();
 			});
 		})
 	}
 
-	protected deleteGame(gameList: Game[]) {
-		gameList.splice(gameList.findIndex((game) => game === this, 1));
+	protected deleteGame() {
 		this.channel.delete();
 	}
 
@@ -123,7 +106,7 @@ export class Game {
 		);
 	}
 
-	protected async banOption(player: Player, tier: number, choice: number, selected: number[]) {
+	protected async banOption(tier: number, choice: number, selected: number[]) {
 		selected.push(choice);
 		let grouping: Tier = this.deck.groups[tier][choice];
 		await this.channel.send(
