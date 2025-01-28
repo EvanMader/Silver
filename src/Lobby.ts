@@ -279,7 +279,7 @@ export class Lobby extends Game {
 		const countdown = await this.channel.send({
 			content: `<@${player.user.id}> Select one tier ${
 				tier + 1
-			} group to ${pick ? 'pick' : 'ban'}! You have ${Math.floor(
+			} group to **${pick ? 'pick' : 'ban'}**! You have ${Math.floor(
 				remainingTime / 1000
 			)} seconds remaining.`,
 			files: [
@@ -293,10 +293,11 @@ export class Lobby extends Game {
 		});
 
 		const updateCountdown = async () => {
-			remainingTime -= 5000;
-
-			if (remainingTime >= 0 && interval !== null) {
+			if (remainingTime > 0 && interval !== null) {
 				try {
+					remainingTime -= remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+					const nextTimeout = remainingTime >= 5000 ? 5000 : remainingTime;
+
 					countdown.edit({
 						content: `<@${player.user.id}> Select one tier ${
 							tier + 1
@@ -306,12 +307,17 @@ export class Lobby extends Game {
 							remainingTime / 1000
 						)} seconds remaining.`,
 					});
-					interval = setTimeout(updateCountdown, 5000);
+
+					interval = setTimeout(updateCountdown, nextTimeout);
 				} catch {}
+			} else {
+				interval = null;
 			}
 		};
 
-		let interval: NodeJS.Timeout | null = setTimeout(updateCountdown, 5000);
+		const firstTimeout = remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+
+		let interval: NodeJS.Timeout | null = setTimeout(updateCountdown, firstTimeout);
 
 		const selectMenu = new StringSelectMenuBuilder()
 			.setCustomId('group_select')
@@ -487,9 +493,9 @@ export class Lobby extends Game {
 			numberOfFoodsDraftOptions
 		);
 
-		const timerPerGroupOptions = Array.from({ length: 5 }, (_, i) => ({
-			label: `${i * 5}`,
-			value: `${i * 5}`,
+		const timerPerGroupOptions = Array.from({ length: 21 }, (_, i) => ({
+			label: `${i}`,
+			value: `${i}`,
 		}));
 
 		const timerPerGroupDropdown = createDropdown(
@@ -509,9 +515,9 @@ export class Lobby extends Game {
 			timerBaseOptions
 		);
 
-		const timeToLookOptions = Array.from({ length: 13 }, (_, i) => ({
-			label: `${i * 10}`,
-			value: `${i * 10}`,
+		const timeToLookOptions = Array.from({ length: 25 }, (_, i) => ({
+			label: `${i * 5}`,
+			value: `${i * 5}`,
 		}));
 
 		const timeToLookDropdown = createDropdown(
