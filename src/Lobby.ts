@@ -47,9 +47,9 @@ export class Lobby extends Game {
 		this.lobbyMessages = [];
 		this.numberOfPetsDraft = 4;
 		this.numberOfFoodsDraft = 2;
-		this.timerPerGroup = 5000;
-		this.timerBase = 5000;
-		this.timeToLook = 10000;
+		this.timerPerGroup = 3000;
+		this.timerBase = 15000;
+		this.timeToLook = 15000;
 		this.randomizeTiers = true;
 		this.allowTalking = false;
 		this.draft = DraftType.SnakeRotate;
