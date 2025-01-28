@@ -15,6 +15,13 @@ import { Game } from './Game';
 import { Player } from './Player';
 import { Deck, Tier } from './Deck';
 
+enum DraftType {
+	SnakeRotate,
+	Snake,
+	Rotate,
+	RotateCoprime
+}
+
 export class Lobby extends Game {
 	host: Player;
 	lobbyMessages: Message[];
@@ -25,6 +32,9 @@ export class Lobby extends Game {
 	timeToLook: number;
 	randomizeTiers: boolean;
 	allowTalking: boolean;
+	draft: DraftType;
+	repeatPets: boolean;
+	numberOfBans: number;
 
 	public constructor(
 		players: Player[],
@@ -42,6 +52,9 @@ export class Lobby extends Game {
 		this.timeToLook = 10000;
 		this.randomizeTiers = true;
 		this.allowTalking = false;
+		this.draft = DraftType.SnakeRotate;
+		this.repeatPets = true;
+		this.numberOfBans = 0;
 	}
 
 	public static async create(
@@ -176,6 +189,19 @@ export class Lobby extends Game {
 					this.timerBase;
 				await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
+
+				for (let j = 0; j < this.numberOfBans; j++) {
+					await this.selectGroup(
+						this.players[this.getTurn()],
+						order[i],
+						timer,
+						false,
+						selected
+					);
+					this.turn++;
+					timer -= this.timerPerGroup;
+				}
+
 				for (let j = 0; j < this.players.length; j++) {
 					await this.selectGroup(
 						this.players[this.getTurn()],
@@ -188,8 +214,39 @@ export class Lobby extends Game {
 					timer -= this.timerPerGroup;
 				}
 
-				this.players = this.players.reverse();
-				if (i % 2 == 1) this.players.unshift(this.players.pop()!);
+				switch(this.draft) {
+					case DraftType.SnakeRotate:
+						this.players = this.players.reverse();
+						if (i % 2 == 1) this.players.unshift(this.players.pop()!);
+						break;
+
+					case DraftType.Snake:
+						this.players = this.players.reverse();
+						break;
+
+					case DraftType.Rotate:
+						this.players.unshift(this.players.pop()!);
+						break;
+
+					case DraftType.RotateCoprime:
+						const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+    
+						const numPlayers = this.players.length;
+						let coprime = 1;
+						for (let x = 2; x < numPlayers; x++) {
+							if (gcd(x, numPlayers) === 1) {
+								coprime = x;
+								break;
+							}
+						}
+
+						this.players = [...this.players.slice(-coprime), ...this.players.slice(0, -coprime)];
+						break;
+
+					default:
+						console.log("Invalid Draft Type");
+						break;
+				}
 			}
 
 			for (const player of this.players) {
@@ -485,6 +542,42 @@ export class Lobby extends Game {
 			allowTalkingOptions
 		);
 
+		const draftTypeOptions = Object.values(DraftType)
+			.filter((value) => typeof value === "string")
+			.map((label) => ({
+				label,
+				value: label
+			}));
+			
+		
+		const draftTypeDropdown = createDropdown(
+			'draft_type',
+			`Draft Type: ${DraftType[this.draft]}`,
+			draftTypeOptions
+		);
+
+		const repeatPetOptions = [
+			{ label: 'True', value: 'true'},
+			{ label: 'False', value: 'false'}
+		];
+		
+		const repeatPetsDropdown = createDropdown(
+			'repeat_pets',
+			`Repeat Pets: ${this.repeatPets}`,
+			repeatPetOptions
+		);
+
+		const numberOfBansOptions = Array.from({ length: 3 }, (_, i) => ({
+			label: `${i}`,
+			value: `${i}`,
+		}));
+
+		const numberOfBansDropdown = createDropdown(
+			'number_of_bans',
+			`Number of bans: ${this.numberOfBans}`,
+			numberOfBansOptions
+		);
+
 		let numberOfPetsDraftRow =
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				numberOfPetsDraftDropdown
@@ -513,6 +606,18 @@ export class Lobby extends Game {
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				allowTalkingDropdown
 			);
+		let draftTypeRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				draftTypeDropdown
+			);
+		let repeatPetsRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				repeatPetsDropdown
+			);
+		let numberOfBansRow = 
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				numberOfBansDropdown
+			)
 
 		const settingsMessage1 = await this.channel.send({
 			components: [
@@ -524,7 +629,7 @@ export class Lobby extends Game {
 			],
 		});
 		const settingsMessage2 = await this.channel.send({
-			components: [randomizeTiersRow, allowTalkingRow],
+			components: [randomizeTiersRow, allowTalkingRow, draftTypeRow, repeatPetsRow, numberOfBansRow],
 		});
 		this.lobbyMessages.push(settingsMessage1);
 		this.lobbyMessages.push(settingsMessage2);
@@ -676,9 +781,50 @@ export class Lobby extends Game {
 								)
 							);
 						break;
+
+					case 'draft_type':
+						this.draft = interaction.values[0] === "SnakeRotate" ? DraftType.SnakeRotate :
+							interaction.values[0] === "Snake" ? DraftType.Snake :
+							interaction.values[0] === "Rotate" ? DraftType.Rotate :
+							interaction.values[0] === "RotateCoprime" ? DraftType.RotateCoprime :
+							DraftType.SnakeRotate;
+
+						draftTypeRow = 
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'draft_type',
+									`Draft Type: ${DraftType[this.draft]}`,
+									draftTypeOptions
+								)
+							)
+						break;
+						
+					case 'repeat_pets':
+						this.repeatPets = interaction.values[0] === 'true';
+
+						repeatPetsRow = 
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'repeat_pets',
+									`Repeat Pets: ${this.repeatPets}`,
+									repeatPetOptions
+								)
+							)
+						break;
+
+					case 'number_of_bans':
+						this.numberOfBans = parseInt(interaction.values[0], 10);
+
+						numberOfBansRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+							createDropdown(
+								'number_of_bans',
+								`Number of bans: ${this.numberOfBans}`,
+								numberOfBansOptions
+							)
+						)
 				}
 
-				const updatedRows = [randomizeTiersRow, allowTalkingRow];
+				const updatedRows = [randomizeTiersRow, allowTalkingRow, draftTypeRow, repeatPetsRow, numberOfBansRow];
 				await interaction.message
 					.edit({
 						components: updatedRows,
@@ -692,7 +838,7 @@ export class Lobby extends Game {
 		for (let i = 0; i < 6; i++) {
 			const tierGroups: Tier[] = [];
 
-			const validPets = this.deck.tiers[i].pets.filter(
+			let validPets = this.deck.tiers[i].pets.filter(
 				(pet) =>
 					pet.name !== 'Snail' &&
 					pet.name !== 'Penguin' &&
@@ -709,6 +855,11 @@ export class Lobby extends Game {
 
 				const selectedPets = shuffledPets.slice(0, this.numberOfPetsDraft);
 				const selectedFoods = shuffledFoods.slice(0, this.numberOfFoodsDraft);
+				if (!this.repeatPets) {
+					validPets = validPets.filter(
+						(pet) => !selectedPets.some((selected) => selected.name === pet.name)
+					);
+				}
 
 				tierGroups.push({ pets: selectedPets, foods: selectedFoods });
 			}
