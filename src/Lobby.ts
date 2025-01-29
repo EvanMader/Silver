@@ -245,7 +245,7 @@ export class Lobby extends Game {
 						timer -= this.timerPerGroup;
 					}
 				} else {
-					await this.biddingDraft(order[i], timer);
+					await this.biddingDraft(order[i], timer).catch(() => null);
 				}
 
 				switch (this.draft) {
