@@ -94,10 +94,10 @@ export class Lobby extends Game {
 		let players: Player[] = [host];
 
 		const current: Lobby = new Lobby(players, client, guild, channel);
-		current.joinLeaveGame();
-		current.lobbyOptions();
-		await current.waitStart();
-		current.startGame();
+		current.joinLeaveGame().catch(() => null);
+		current.lobbyOptions().catch(() => null);
+		await current.waitStart().catch(() => null);
+		current.startGame().catch(() => null);
 		return current;
 	}
 
@@ -1486,7 +1486,7 @@ export class Lobby extends Game {
 		players: Player[],
 		selections: Map<string, Map<string, string>>
 	): Map<string, number> {
-		const assignedGroups = new Map<string, number>(); // Map<userId, groupNumber>
+		const assignedGroups = new Map<string, number>();
 
 		const availableGroups = new Set<number>();
 		for (const userSelections of Array.from(selections.values())) {
