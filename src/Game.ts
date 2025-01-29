@@ -328,4 +328,8 @@ export class Game {
 			})
 		}
 	}
+
+	protected getHammerTime(future: number): string {
+		return `<t:${Math.floor((Date.now() + future) / 1000)}:R>`
+	}
 }

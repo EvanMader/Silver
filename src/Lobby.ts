@@ -184,9 +184,7 @@ export class Lobby extends Game {
 					10 - this.numberOfPetsDraft
 				} Pets and ${
 					3 - this.numberOfFoodsDraft
-				} Food Per Tier**__ \nDraft begins in ${
-					this.timeToLook / 1000
-				} seconds`,
+				} Food Per Tier**__ \nDraft begins in ${this.timeToLook/1000} seconds.`,
 				files: [
 					{
 						attachment: await this.getTeam(
@@ -407,7 +405,7 @@ export class Lobby extends Game {
 		);
 
 		const actionMessage = await this.channel.send({
-			content: `**${pick ? 'Pick' : 'Ban'}** your group:`,
+			content: `**${pick ? 'Pick' : 'Ban'}** ${this.getHammerTime(timerLength + 1000)}:`,
 			components: [menuRow, buttonRow],
 		});
 
@@ -1214,7 +1212,7 @@ export class Lobby extends Game {
 					.map((player) => player.user.displayName)
 					.join(' => ');
 			const countdown = await this.channel.send({
-				content: `Timer: ${remainingTime}\n` + priorityMessage,
+				content: `Timer: ${remainingTime/1000} seconds left.\n` + priorityMessage,
 				files: [
 					{
 						attachment: await this.getGroups(
@@ -1236,7 +1234,7 @@ export class Lobby extends Game {
 							remainingTime >= 5000 ? 5000 : remainingTime;
 
 						countdown.edit({
-							content: `Timer: ${remainingTime}\n` + priorityMessage,
+							content: `Timer: ${remainingTime/1000} seconds left.\n` + priorityMessage,
 						});
 
 						interval = setTimeout(updateCountdown, nextTimeout);
@@ -1311,7 +1309,7 @@ export class Lobby extends Game {
 
 			messages.push(
 				await this.channel.send({
-					content: 'Top = first pick : Bottom = last pick',
+					content: `${this.getHammerTime(timer + 1000)}`,
 					components: [buttonRow],
 				})
 			);
