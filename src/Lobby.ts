@@ -10,16 +10,18 @@ import {
 	PermissionFlagsBits,
 	StringSelectMenuBuilder,
 	TextChannel,
+	Interaction,
 } from 'discord.js';
 import { Game } from './Game';
 import { Player } from './Player';
-import { Deck, Tier } from './Deck';
+import { Deck, Tier, Pet } from './Deck';
 
 enum DraftType {
 	SnakeRotate,
 	Snake,
 	Rotate,
-	RotateCoprime
+	RotateCoprime,
+	Random,
 }
 
 export class Lobby extends Game {
@@ -35,6 +37,8 @@ export class Lobby extends Game {
 	draft: DraftType;
 	repeatPets: boolean;
 	numberOfBans: number;
+	bidding: boolean;
+	draftBanPets: boolean;
 
 	public constructor(
 		players: Player[],
@@ -45,6 +49,7 @@ export class Lobby extends Game {
 		super(players, client, guild, channel);
 		this.host = players[0];
 		this.lobbyMessages = [];
+
 		this.numberOfPetsDraft = 4;
 		this.numberOfFoodsDraft = 2;
 		this.timerPerGroup = 3000;
@@ -55,6 +60,8 @@ export class Lobby extends Game {
 		this.draft = DraftType.SnakeRotate;
 		this.repeatPets = true;
 		this.numberOfBans = 0;
+		this.bidding = false;
+		this.draftBanPets = true;
 	}
 
 	public static async create(
@@ -110,16 +117,45 @@ export class Lobby extends Game {
 			this.packs = packs;
 
 			for (let i = 0; i < 6; i++) {
+				const [tandgrisner] = this.deck.tiers[i].pets.splice(
+					this.deck.tiers[i].pets.findIndex(
+						(p) => p.name === 'Tandgrisner'
+					),
+					1
+				);
+				let tandgnostUsed = false;
 				for (let j = 0; j < 10 - this.numberOfPetsDraft; j++) {
 					let index = Math.floor(
 						Math.random() * this.deck.tiers[i].pets.length
 					);
-					for (const player of this.players) {
-						player.deck.tiers[i].pets.push(
-							this.deck.tiers[i].pets[index]
-						);
+					let pet = this.deck.tiers[i].pets[index];
+					if (pet.name === 'Tandgnost') {
+						if (j == 10 - this.numberOfPetsDraft - 1) {
+							j--;
+							continue;
+						}
+						tandgnostUsed = true;
+						for (const player of this.players) {
+							player.deck.tiers[i].pets.push(pet);
+						}
+
+						if (tandgrisner) {
+							for (const player of this.players) {
+								player.deck.tiers[i].pets.push(tandgrisner);
+							}
+						}
+
+						this.deck.tiers[i].pets.splice(index, 1);
+					} else {
+						for (const player of this.players) {
+							player.deck.tiers[i].pets.push(pet);
+						}
+
+						this.deck.tiers[i].pets.splice(index, 1);
 					}
-					this.deck.tiers[i].pets.splice(index, 1);
+				}
+				if (!tandgnostUsed && tandgrisner) {
+					this.deck.tiers[i].pets.push(tandgrisner);
 				}
 
 				for (let j = 0; j < 3 - this.numberOfFoodsDraft; j++) {
@@ -171,10 +207,7 @@ export class Lobby extends Game {
 				}
 			}
 
-			this.players = this.players
-				.map((player) => ({ player, sort: Math.random() }))
-				.sort((a, b) => a.sort - b.sort)
-				.map(({ player }) => player);
+			this.players = this.players.sort(() => Math.random() - 0.5);
 
 			this.constructGroups();
 
@@ -189,35 +222,39 @@ export class Lobby extends Game {
 					this.timerBase;
 				await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
+				if (!this.bidding) {
+					for (let j = 0; j < this.numberOfBans; j++) {
+						await this.selectGroup(
+							this.players[this.getTurn()],
+							order[i],
+							timer,
+							false,
+							selected
+						);
+						this.turn++;
+						timer -= this.timerPerGroup;
+					}
 
-				for (let j = 0; j < this.numberOfBans; j++) {
-					await this.selectGroup(
-						this.players[this.getTurn()],
-						order[i],
-						timer,
-						false,
-						selected
-					);
-					this.turn++;
-					timer -= this.timerPerGroup;
+					for (let j = 0; j < this.players.length; j++) {
+						await this.selectGroup(
+							this.players[this.getTurn()],
+							order[i],
+							timer,
+							true,
+							selected
+						);
+						this.turn++;
+						timer -= this.timerPerGroup;
+					}
+				} else {
+					await this.biddingDraft(order[i], timer);
 				}
 
-				for (let j = 0; j < this.players.length; j++) {
-					await this.selectGroup(
-						this.players[this.getTurn()],
-						order[i],
-						timer,
-						true,
-						selected
-					);
-					this.turn++;
-					timer -= this.timerPerGroup;
-				}
-
-				switch(this.draft) {
+				switch (this.draft) {
 					case DraftType.SnakeRotate:
 						this.players = this.players.reverse();
-						if (i % 2 == 1) this.players.unshift(this.players.pop()!);
+						if (i % 2 == 1)
+							this.players.unshift(this.players.pop()!);
 						break;
 
 					case DraftType.Snake:
@@ -229,8 +266,9 @@ export class Lobby extends Game {
 						break;
 
 					case DraftType.RotateCoprime:
-						const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
-    
+						const gcd = (a: number, b: number): number =>
+							b === 0 ? a : gcd(b, a % b);
+
 						const numPlayers = this.players.length;
 						let coprime = 1;
 						for (let x = 2; x < numPlayers; x++) {
@@ -240,11 +278,19 @@ export class Lobby extends Game {
 							}
 						}
 
-						this.players = [...this.players.slice(-coprime), ...this.players.slice(0, -coprime)];
+						this.players = [
+							...this.players.slice(-coprime),
+							...this.players.slice(0, -coprime),
+						];
+						break;
+
+					case DraftType.Random:
+						this.players = this.players.sort(
+							() => Math.random() - 0.5
+						);
 						break;
 
 					default:
-						console.log("Invalid Draft Type");
 						break;
 				}
 			}
@@ -295,8 +341,12 @@ export class Lobby extends Game {
 		const updateCountdown = async () => {
 			if (remainingTime > 0 && interval !== null) {
 				try {
-					remainingTime -= remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
-					const nextTimeout = remainingTime >= 5000 ? 5000 : remainingTime;
+					remainingTime -=
+						remainingTime % 5000 === 0
+							? 5000
+							: remainingTime % 5000;
+					const nextTimeout =
+						remainingTime >= 5000 ? 5000 : remainingTime;
 
 					countdown.edit({
 						content: `<@${player.user.id}> Select one tier ${
@@ -315,9 +365,13 @@ export class Lobby extends Game {
 			}
 		};
 
-		const firstTimeout = remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+		const firstTimeout =
+			remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
 
-		let interval: NodeJS.Timeout | null = setTimeout(updateCountdown, firstTimeout);
+		let interval: NodeJS.Timeout | null = setTimeout(
+			updateCountdown,
+			firstTimeout
+		);
 
 		const selectMenu = new StringSelectMenuBuilder()
 			.setCustomId('group_select')
@@ -549,13 +603,12 @@ export class Lobby extends Game {
 		);
 
 		const draftTypeOptions = Object.values(DraftType)
-			.filter((value) => typeof value === "string")
+			.filter((value) => typeof value === 'string')
 			.map((label) => ({
 				label,
-				value: label
+				value: label,
 			}));
-			
-		
+
 		const draftTypeDropdown = createDropdown(
 			'draft_type',
 			`Draft Type: ${DraftType[this.draft]}`,
@@ -563,10 +616,10 @@ export class Lobby extends Game {
 		);
 
 		const repeatPetOptions = [
-			{ label: 'True', value: 'true'},
-			{ label: 'False', value: 'false'}
+			{ label: 'True', value: 'true' },
+			{ label: 'False', value: 'false' },
 		];
-		
+
 		const repeatPetsDropdown = createDropdown(
 			'repeat_pets',
 			`Repeat Pets: ${this.repeatPets}`,
@@ -582,6 +635,28 @@ export class Lobby extends Game {
 			'number_of_bans',
 			`Number of bans: ${this.numberOfBans}`,
 			numberOfBansOptions
+		);
+
+		const biddingOptions = [
+			{ label: 'True', value: 'true' },
+			{ label: 'False', value: 'false' },
+		];
+
+		const biddingDropdown = createDropdown(
+			'bidding',
+			`Bidding: ${this.bidding}`,
+			biddingOptions
+		);
+
+		const draftBanPetsOptions = [
+			{ label: 'True', value: 'true' },
+			{ label: 'False', value: 'false' },
+		];
+
+		const draftBanPetsDropdown = createDropdown(
+			'draft_ban_pets',
+			`Draft ban pets: ${this.draftBanPets}`,
+			draftBanPetsOptions
 		);
 
 		let numberOfPetsDraftRow =
@@ -620,10 +695,18 @@ export class Lobby extends Game {
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				repeatPetsDropdown
 			);
-		let numberOfBansRow = 
+		let numberOfBansRow =
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				numberOfBansDropdown
-			)
+			);
+		let biddingRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				biddingDropdown
+			);
+		let draftBanPetsRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				draftBanPetsDropdown
+			);
 
 		const settingsMessage1 = await this.channel.send({
 			components: [
@@ -635,13 +718,24 @@ export class Lobby extends Game {
 			],
 		});
 		const settingsMessage2 = await this.channel.send({
-			components: [randomizeTiersRow, allowTalkingRow, draftTypeRow, repeatPetsRow, numberOfBansRow],
+			components: [
+				randomizeTiersRow,
+				allowTalkingRow,
+				draftTypeRow,
+				repeatPetsRow,
+				numberOfBansRow,
+			],
+		});
+		const settingsMessage3 = await this.channel.send({
+			components: [biddingRow, draftBanPetsRow],
 		});
 		this.lobbyMessages.push(settingsMessage1);
 		this.lobbyMessages.push(settingsMessage2);
+		this.lobbyMessages.push(settingsMessage3);
 
 		const collector1 = settingsMessage1.createMessageComponentCollector();
 		const collector2 = settingsMessage2.createMessageComponentCollector();
+		const collector3 = settingsMessage3.createMessageComponentCollector();
 
 		collector1.on(
 			'collect',
@@ -789,48 +883,114 @@ export class Lobby extends Game {
 						break;
 
 					case 'draft_type':
-						this.draft = interaction.values[0] === "SnakeRotate" ? DraftType.SnakeRotate :
-							interaction.values[0] === "Snake" ? DraftType.Snake :
-							interaction.values[0] === "Rotate" ? DraftType.Rotate :
-							interaction.values[0] === "RotateCoprime" ? DraftType.RotateCoprime :
-							DraftType.SnakeRotate;
+						this.draft =
+							interaction.values[0] === 'SnakeRotate'
+								? DraftType.SnakeRotate
+								: interaction.values[0] === 'Snake'
+								? DraftType.Snake
+								: interaction.values[0] === 'Rotate'
+								? DraftType.Rotate
+								: interaction.values[0] === 'RotateCoprime'
+								? DraftType.RotateCoprime
+								: interaction.values[0] === 'Random'
+								? DraftType.Random
+								: DraftType.SnakeRotate;
 
-						draftTypeRow = 
+						draftTypeRow =
 							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 								createDropdown(
 									'draft_type',
 									`Draft Type: ${DraftType[this.draft]}`,
 									draftTypeOptions
 								)
-							)
+							);
 						break;
-						
+
 					case 'repeat_pets':
 						this.repeatPets = interaction.values[0] === 'true';
 
-						repeatPetsRow = 
+						repeatPetsRow =
 							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 								createDropdown(
 									'repeat_pets',
 									`Repeat Pets: ${this.repeatPets}`,
 									repeatPetOptions
 								)
-							)
+							);
 						break;
 
 					case 'number_of_bans':
 						this.numberOfBans = parseInt(interaction.values[0], 10);
 
-						numberOfBansRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-							createDropdown(
-								'number_of_bans',
-								`Number of bans: ${this.numberOfBans}`,
-								numberOfBansOptions
-							)
-						)
+						numberOfBansRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'number_of_bans',
+									`Number of bans: ${this.numberOfBans}`,
+									numberOfBansOptions
+								)
+							);
+						break;
 				}
 
-				const updatedRows = [randomizeTiersRow, allowTalkingRow, draftTypeRow, repeatPetsRow, numberOfBansRow];
+				const updatedRows = [
+					randomizeTiersRow,
+					allowTalkingRow,
+					draftTypeRow,
+					repeatPetsRow,
+					numberOfBansRow,
+				];
+				await interaction.message
+					.edit({
+						components: updatedRows,
+					})
+					.catch(() => null);
+			}
+		);
+
+		collector3.on(
+			'collect',
+			async (interaction: MessageComponentInteraction) => {
+				if (!interaction.isStringSelectMenu()) return;
+				if (interaction.user != this.host.user) {
+					interaction.reply({
+						content:
+							"You don't have permission to change the game settings.",
+						ephemeral: true,
+					});
+					return;
+				}
+				await interaction.deferUpdate();
+
+				switch (interaction.customId) {
+					case 'bidding':
+						this.bidding = interaction.values[0] === 'true';
+
+						biddingRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'bidding',
+									`Bidding: ${this.bidding}`,
+									biddingOptions
+								)
+							);
+						break;
+
+					case 'draft_ban_pets':
+						this.draftBanPets = interaction.values[0] === 'true';
+
+						draftBanPetsRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'draft_ban_pets',
+									`Draft ban pets: ${this.draftBanPets}`,
+									draftBanPetsOptions
+								)
+							);
+						break;
+				}
+
+				const updatedRows = [biddingRow, draftBanPetsRow];
 				await interaction.message
 					.edit({
 						components: updatedRows,
@@ -844,12 +1004,16 @@ export class Lobby extends Game {
 		for (let i = 0; i < 6; i++) {
 			const tierGroups: Tier[] = [];
 
-			let validPets = this.deck.tiers[i].pets.filter(
-				(pet) =>
-					pet.name !== 'Snail' &&
-					pet.name !== 'Penguin' &&
-					pet.name !== 'Werewolf'
-			);
+			let validPets = this.deck.tiers[i].pets;
+
+			if (this.draftBanPets) {
+				validPets = validPets.filter(
+					(pet) =>
+						pet.name !== 'Snail' &&
+						pet.name !== 'Penguin' &&
+						pet.name !== 'Werewolf'
+				);
+			}
 
 			for (let j = 0; j < this.players.length + 2; j++) {
 				const shuffledPets = [...validPets].sort(
@@ -859,11 +1023,36 @@ export class Lobby extends Game {
 					() => Math.random() - 0.5
 				);
 
-				const selectedPets = shuffledPets.slice(0, this.numberOfPetsDraft);
-				const selectedFoods = shuffledFoods.slice(0, this.numberOfFoodsDraft);
+				const [tandgrisner] = validPets.splice(
+					validPets.findIndex((pet) => pet.name === 'Tandgrisner'),
+					1
+				);
+				const selectedPets: Pet[] = [];
+				for (const pet of shuffledPets) {
+					if (pet.name === 'Tandgnost') {
+						if (selectedPets.length == this.numberOfPetsDraft - 1)
+							continue;
+						selectedPets.push(pet);
+						selectedPets.push(tandgrisner);
+					} else if (pet.name !== 'Tandgrisner') {
+						selectedPets.push(pet);
+					}
+
+					if (selectedPets.length >= this.numberOfPetsDraft) {
+						break;
+					}
+				}
+
+				const selectedFoods = shuffledFoods.slice(
+					0,
+					this.numberOfFoodsDraft
+				);
 				if (!this.repeatPets) {
 					validPets = validPets.filter(
-						(pet) => !selectedPets.some((selected) => selected.name === pet.name)
+						(pet) =>
+							!selectedPets.some(
+								(selected) => selected.name === pet.name
+							)
 					);
 				}
 
@@ -875,9 +1064,7 @@ export class Lobby extends Game {
 	}
 
 	async waitStart() {
-		await new Promise((resolve) =>
-				setTimeout(resolve, 3000)
-			);
+		await new Promise((resolve) => setTimeout(resolve, 3000));
 
 		const startGameButton = new ButtonBuilder()
 			.setCustomId('start_game_button')
@@ -960,6 +1147,13 @@ export class Lobby extends Game {
 							});
 							return;
 						}
+						if (this.players.length >= 18) {
+							await interaction.reply({
+								content: 'Lobby is full. 18 Players Max.',
+								ephemeral: true,
+							});
+							return;
+						}
 
 						this.players.push(
 							await Player.create(interaction.user, this.guild)
@@ -1008,5 +1202,316 @@ export class Lobby extends Game {
 				}
 			);
 		});
+	}
+
+	async biddingDraft(tier: number, timer: number) {
+		await new Promise<void>(async (resolve) => {
+			let remainingTime = timer;
+
+			const priorityMessage =
+				'Priority: ' +
+				this.players
+					.map((player) => player.user.displayName)
+					.join(' => ');
+			const countdown = await this.channel.send({
+				content: `Timer: ${remainingTime}\n` + priorityMessage,
+				files: [
+					{
+						attachment: await this.getGroups(
+							this.deck.groups[tier],
+							[]
+						),
+					},
+				],
+			});
+
+			const updateCountdown = async () => {
+				if (remainingTime > 0 && interval !== null) {
+					try {
+						remainingTime -=
+							remainingTime % 5000 === 0
+								? 5000
+								: remainingTime % 5000;
+						const nextTimeout =
+							remainingTime >= 5000 ? 5000 : remainingTime;
+
+						countdown.edit({
+							content: `Timer: ${remainingTime}\n` + priorityMessage,
+						});
+
+						interval = setTimeout(updateCountdown, nextTimeout);
+					} catch {}
+				} else {
+					interval = null;
+				}
+			};
+
+			const firstTimeout =
+				remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+
+			let interval: NodeJS.Timeout | null = setTimeout(
+				updateCountdown,
+				firstTimeout
+			);
+
+			const numPlayers = this.players.length;
+			const numGroups = this.deck.groups[tier].length;
+			const rows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
+			const messages: Message[] = [];
+
+			const selections = new Map<string, Map<string, string>>();
+			const submittedUsers = new Set<string>();
+
+			for (let i = 0; i < numPlayers; i++) {
+				const selectMenu = new StringSelectMenuBuilder().setCustomId(
+					`Option-${i + 1}`
+				);
+
+				for (let j = 0; j < numGroups; j++) {
+					const label = String.fromCharCode(65 + j);
+					selectMenu.addOptions({
+						label: label,
+						value: label,
+					});
+				}
+
+				const actionRow =
+					new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+						selectMenu
+					);
+				rows.push(actionRow);
+
+				if (rows.length % 5 === 0 || i === numPlayers - 1) {
+					messages.push(
+						await this.channel.send({
+							content: '',
+							components: rows,
+						})
+					);
+
+					rows.length = 0;
+				}
+			}
+
+			const submitButton = new ButtonBuilder()
+				.setCustomId('submit')
+				.setLabel('Submit')
+				.setStyle(ButtonStyle.Primary);
+
+			const teamButton = new ButtonBuilder()
+				.setCustomId('team_button')
+				.setLabel('Team')
+				.setStyle(ButtonStyle.Success);
+
+			const buttonRow =
+				new ActionRowBuilder<ButtonBuilder>().addComponents(
+					submitButton,
+					teamButton
+				);
+
+			messages.push(
+				await this.channel.send({
+					content: 'Top = first pick : Bottom = last pick',
+					components: [buttonRow],
+				})
+			);
+
+			const filter = (interaction: Interaction) =>
+				(interaction.isStringSelectMenu() &&
+					interaction.customId.startsWith('Option-')) ||
+				(interaction.isButton() && interaction.customId === 'submit') ||
+				(interaction.isButton() && interaction.customId === 'team_button');
+
+			const collector = this.channel.createMessageComponentCollector({
+				filter,
+				time: timer + 1000,
+			});
+
+			collector.on('collect', async (interaction) => {
+				const userId = interaction.user.id;
+
+				if (interaction.isStringSelectMenu()) {
+					const dropdownId = interaction.customId;
+					const selectedValue = interaction.values[0];
+
+					if (!selections.has(userId)) {
+						selections.set(userId, new Map<string, string>());
+					}
+
+					selections.get(userId)!.set(dropdownId, selectedValue);
+
+					await interaction.deferUpdate();
+				} else if (
+					interaction.isButton() &&
+					interaction.customId === 'submit'
+				) {
+					const isPlayer = this.players.some(
+						(player) => player.user.id === userId
+					);
+					if (!isPlayer) {
+						await interaction.reply({
+							content: 'You are not a participant in this draft!',
+							ephemeral: true,
+						});
+						return;
+					}
+
+					if (submittedUsers.has(userId)) {
+						await interaction.reply({
+							content:
+								'You have already submitted your selections!',
+							ephemeral: true,
+						});
+						return;
+					}
+
+					const userSelections = selections.get(userId) ?? new Map();
+					if (userSelections.size < numPlayers) {
+						await interaction.reply({
+							content: `You haven't selected all options! Please complete your selections before submitting.`,
+							ephemeral: true,
+						});
+						return;
+					}
+
+					const selectedValues = Array.from(userSelections.values());
+					const hasDuplicates =
+						new Set(selectedValues).size !== selectedValues.length;
+
+					if (hasDuplicates) {
+						await interaction.reply({
+							content:
+								'You have selected the same option more than once! Please fix your selections and try again.',
+							ephemeral: true,
+						});
+						return;
+					}
+
+					submittedUsers.add(userId);
+
+					const formattedSelections = Array.from(
+						userSelections.entries()
+					)
+						.map(([dropdownId, value]) => `${dropdownId}: ${value}`)
+						.join('\n');
+
+					await interaction.reply({
+						content: `Submission received! Your selections:\n${formattedSelections}`,
+						ephemeral: true,
+					});
+
+					if (submittedUsers.size === this.players.length) {
+						collector.stop();
+					}
+				} else if (
+					interaction.isButton() &&
+					interaction.customId === 'team_button'
+				) {
+					const isPlayer = this.players.some(
+						(player) => player.user.id === userId
+					);
+					if (!isPlayer) {
+						await interaction.reply({
+							content: 'You are not a participant in this draft!',
+							ephemeral: true,
+						});
+						return;
+					}
+
+					const player = this.players.find(player => player.user.id === userId);
+					await interaction.deferReply({ ephemeral: true });
+					const teamResponse = await this.sendTeam(player!);
+					await interaction.editReply(teamResponse);
+					return;
+				}
+			});
+
+			collector.on('end', () => {
+				for (const message of messages) {
+					message.delete().catch(() => null);
+				}
+				clearTimeout(interval!);
+				interval = null;
+
+				for (const player of this.players) {
+					const userId = player.user.id;
+					if (!submittedUsers.has(userId)) {
+						const randomSelections = new Map<string, string>();
+						const availableOptions = new Set(
+							Array.from({ length: numGroups }, (_, i) =>
+								String.fromCharCode(65 + i)
+							)
+						);
+
+						for (let i = 0; i < numPlayers; i++) {
+							const optionsArray = Array.from(availableOptions);
+							const randomOption =
+								optionsArray[
+									Math.floor(
+										Math.random() * optionsArray.length
+									)
+								];
+							randomSelections.set(
+								`Option-${i + 1}`,
+								randomOption
+							);
+							availableOptions.delete(randomOption);
+						}
+
+						selections.set(userId, randomSelections);
+					}
+				}
+
+				const assignGroups = this.assignGroups(
+					this.players,
+					selections
+				);
+
+				for (const [userId, groupNumber] of Array.from(assignGroups)) {
+					const player = this.players.find(
+						(p) => p.user.id === userId
+					);
+
+					if (player) {
+						this.pickOption(player, tier, groupNumber, []).catch(() => null);
+					}
+				}
+
+				resolve();
+			});
+		});
+	}
+
+	private assignGroups(
+		players: Player[],
+		selections: Map<string, Map<string, string>>
+	): Map<string, number> {
+		const assignedGroups = new Map<string, number>(); // Map<userId, groupNumber>
+
+		const availableGroups = new Set<number>();
+		for (const userSelections of Array.from(selections.values())) {
+			for (const label of Array.from(userSelections.values())) {
+				availableGroups.add(label.charCodeAt(0) - 65);
+			}
+		}
+
+		for (const player of players) {
+			const userId = player.user.id;
+			const userSelections = selections.get(userId);
+
+			const choices = Array.from(userSelections?.values() ?? []).map(
+				(label) => label.charCodeAt(0) - 65
+			);
+
+			for (const choice of choices) {
+				if (availableGroups.has(choice)) {
+					assignedGroups.set(userId, choice);
+					availableGroups.delete(choice);
+					break;
+				}
+			}
+		}
+
+		return assignedGroups;
 	}
 }

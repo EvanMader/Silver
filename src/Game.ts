@@ -102,7 +102,7 @@ export class Game {
 		await this.channel.send(
 			`${this.getNames(grouping.pets)} ${this.getNames(
 				grouping.foods
-			)} has been picked.`
+			)} has been picked by ${player.user.displayName}.`
 		);
 	}
 
