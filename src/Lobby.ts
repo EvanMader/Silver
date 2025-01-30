@@ -653,7 +653,7 @@ export class Lobby extends Game {
 
 		const draftBanPetsDropdown = createDropdown(
 			'draft_ban_pets',
-			`Draft ban pets: ${this.draftBanPets}`,
+			`Ban OP pets: ${this.draftBanPets}`,
 			draftBanPetsOptions
 		);
 
@@ -981,7 +981,7 @@ export class Lobby extends Game {
 							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 								createDropdown(
 									'draft_ban_pets',
-									`Draft ban pets: ${this.draftBanPets}`,
+									`Ban OP pets: ${this.draftBanPets}`,
 									draftBanPetsOptions
 								)
 							);
