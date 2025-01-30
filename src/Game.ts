@@ -316,7 +316,7 @@ export class Game {
 			this.channel.permissionOverwrites.edit(player.user.id, {
 				SendMessages: false,
 				AddReactions: false
-			})
+			}).catch(() => null)
 		}
 	}
 
@@ -325,7 +325,7 @@ export class Game {
 			this.channel.permissionOverwrites.edit(player.user.id, {
 				SendMessages: true,
 				AddReactions: true
-			})
+			}).catch(() => null)
 		}
 	}
 
