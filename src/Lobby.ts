@@ -1378,26 +1378,6 @@ export class Lobby extends Game {
 					}
 
 					const userSelections = selections.get(userId) ?? new Map();
-					if (userSelections.size < numPlayers) {
-						await interaction.reply({
-							content: `You haven't selected all options! Please complete your selections before submitting.`,
-							ephemeral: true,
-						});
-						return;
-					}
-
-					const selectedValues = Array.from(userSelections.values());
-					const hasDuplicates =
-						new Set(selectedValues).size !== selectedValues.length;
-
-					if (hasDuplicates) {
-						await interaction.reply({
-							content:
-								'You have selected the same option more than once! Please fix your selections and try again.',
-							ephemeral: true,
-						});
-						return;
-					}
 
 					submittedUsers.add(userId);
 
@@ -1504,27 +1484,42 @@ export class Lobby extends Game {
 	): Map<string, number> {
 		const assignedGroups = new Map<string, number>();
 
+		// Track available groups
 		const availableGroups = new Set<number>();
-		for (const userSelections of Array.from(selections.values())) {
-			for (const label of Array.from(userSelections.values())) {
-				availableGroups.add(label.charCodeAt(0) - 65);
-			}
+		for (let i = 0; i < this.deck.groups.length; i++) {
+			availableGroups.add(i);
 		}
 
 		for (const player of players) {
 			const userId = player.user.id;
 			const userSelections = selections.get(userId);
 
-			const choices = Array.from(userSelections?.values() ?? []).map(
-				(label) => label.charCodeAt(0) - 65
-			);
+			if (userSelections) {
+				// Create a list of selections, filling gaps if necessary
+				const selectionsList = Array.from(userSelections.values());
+				const filledSelections = selectionsList.filter(
+					(value) => value !== undefined
+				);
 
-			for (const choice of choices) {
-				if (availableGroups.has(choice)) {
-					assignedGroups.set(userId, choice);
-					availableGroups.delete(choice);
-					break;
+				// Try to assign the player's first available preferred group
+				for (const label of filledSelections) {
+					const groupNumber = label.charCodeAt(0) - 65;
+					if (availableGroups.has(groupNumber)) {
+						assignedGroups.set(userId, groupNumber);
+						availableGroups.delete(groupNumber);
+						break;
+					}
 				}
+			}
+
+			// If no preferred group is available, assign a random available group
+			if (!assignedGroups.has(userId) && availableGroups.size > 0) {
+				const randomGroup =
+					Array.from(availableGroups)[
+						Math.floor(Math.random() * availableGroups.size)
+					];
+				assignedGroups.set(userId, randomGroup);
+				availableGroups.delete(randomGroup);
 			}
 		}
 
