@@ -52,15 +52,15 @@ export class Lobby extends Game {
 
 		this.numberOfPetsDraft = 4;
 		this.numberOfFoodsDraft = 2;
-		this.timerPerGroup = 3000;
-		this.timerBase = 15000;
+		this.timerPerGroup = 7000;
+		this.timerBase = 25000;
 		this.timeToLook = 15000;
 		this.randomizeTiers = true;
 		this.allowTalking = false;
 		this.draft = DraftType.SnakeRotate;
 		this.repeatPets = true;
 		this.numberOfBans = 0;
-		this.bidding = false;
+		this.bidding = true;
 		this.draftBanPets = true;
 	}
 
@@ -184,7 +184,9 @@ export class Lobby extends Game {
 					10 - this.numberOfPetsDraft
 				} Pets and ${
 					3 - this.numberOfFoodsDraft
-				} Food Per Tier**__ \nDraft begins in ${this.timeToLook/1000} seconds.`,
+				} Food Per Tier**__ \nDraft begins in ${
+					this.timeToLook / 1000
+				} seconds.`,
 				files: [
 					{
 						attachment: await this.getTeam(
@@ -283,9 +285,13 @@ export class Lobby extends Game {
 						break;
 
 					case DraftType.Random:
-						this.players = this.players.sort(
-							() => Math.random() - 0.5
-						);
+						for (let i = this.players.length - 1; i > 0; i--) {
+							const j = Math.floor(Math.random() * (i + 1));
+							[this.players[i], this.players[j]] = [
+								this.players[j],
+								this.players[i],
+							];
+						}
 						break;
 
 					default:
@@ -405,7 +411,9 @@ export class Lobby extends Game {
 		);
 
 		const actionMessage = await this.channel.send({
-			content: `**${pick ? 'Pick' : 'Ban'}** ${this.getHammerTime(timerLength + 1000)}:`,
+			content: `**${pick ? 'Pick' : 'Ban'}** ${this.getHammerTime(
+				timerLength + 1000
+			)}:`,
 			components: [menuRow, buttonRow],
 		});
 
@@ -1212,7 +1220,9 @@ export class Lobby extends Game {
 					.map((player) => player.user.displayName)
 					.join(' => ');
 			const countdown = await this.channel.send({
-				content: `Timer: ${remainingTime/1000} seconds left.\n` + priorityMessage,
+				content:
+					`Timer: ${remainingTime / 1000} seconds left.\n` +
+					priorityMessage,
 				files: [
 					{
 						attachment: await this.getGroups(
@@ -1234,7 +1244,10 @@ export class Lobby extends Game {
 							remainingTime >= 5000 ? 5000 : remainingTime;
 
 						countdown.edit({
-							content: `Timer: ${remainingTime/1000} seconds left.\n` + priorityMessage,
+							content:
+								`Timer: ${
+									remainingTime / 1000
+								} seconds left.\n` + priorityMessage,
 						});
 
 						interval = setTimeout(updateCountdown, nextTimeout);
@@ -1318,7 +1331,8 @@ export class Lobby extends Game {
 				(interaction.isStringSelectMenu() &&
 					interaction.customId.startsWith('Option-')) ||
 				(interaction.isButton() && interaction.customId === 'submit') ||
-				(interaction.isButton() && interaction.customId === 'team_button');
+				(interaction.isButton() &&
+					interaction.customId === 'team_button');
 
 			const collector = this.channel.createMessageComponentCollector({
 				filter,
@@ -1416,7 +1430,9 @@ export class Lobby extends Game {
 						return;
 					}
 
-					const player = this.players.find(player => player.user.id === userId);
+					const player = this.players.find(
+						(player) => player.user.id === userId
+					);
 					await interaction.deferReply({ ephemeral: true });
 					const teamResponse = await this.sendTeam(player!);
 					await interaction.editReply(teamResponse);
@@ -1471,7 +1487,9 @@ export class Lobby extends Game {
 					);
 
 					if (player) {
-						this.pickOption(player, tier, groupNumber, []).catch(() => null);
+						this.pickOption(player, tier, groupNumber, []).catch(
+							() => null
+						);
 					}
 				}
 
