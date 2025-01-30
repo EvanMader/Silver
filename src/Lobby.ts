@@ -1484,7 +1484,6 @@ export class Lobby extends Game {
 	): Map<string, number> {
 		const assignedGroups = new Map<string, number>();
 
-		// Track available groups
 		const availableGroups = new Set<number>();
 		for (let i = 0; i < this.deck.groups.length; i++) {
 			availableGroups.add(i);
@@ -1495,13 +1494,11 @@ export class Lobby extends Game {
 			const userSelections = selections.get(userId);
 
 			if (userSelections) {
-				// Create a list of selections, filling gaps if necessary
 				const selectionsList = Array.from(userSelections.values());
 				const filledSelections = selectionsList.filter(
 					(value) => value !== undefined
 				);
 
-				// Try to assign the player's first available preferred group
 				for (const label of filledSelections) {
 					const groupNumber = label.charCodeAt(0) - 65;
 					if (availableGroups.has(groupNumber)) {
@@ -1512,7 +1509,6 @@ export class Lobby extends Game {
 				}
 			}
 
-			// If no preferred group is available, assign a random available group
 			if (!assignedGroups.has(userId) && availableGroups.size > 0) {
 				const randomGroup =
 					Array.from(availableGroups)[
