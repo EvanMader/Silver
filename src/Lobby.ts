@@ -230,7 +230,7 @@ export class Lobby extends Game {
 							timer,
 							false,
 							selected
-						);
+						).catch(() => null);
 						this.turn++;
 						timer -= this.timerPerGroup;
 					}
@@ -242,7 +242,7 @@ export class Lobby extends Game {
 							timer,
 							true,
 							selected
-						);
+						).catch(() => null);
 						this.turn++;
 						timer -= this.timerPerGroup;
 					}
