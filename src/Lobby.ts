@@ -52,7 +52,7 @@ export class Lobby extends Game {
 		this.numberOfPetsDraft = 4;
 		this.numberOfFoodsDraft = 2;
 		this.timerPerGroup = 7000;
-		this.timerBase = 25000;
+		this.timerBase = 60000;
 		this.timeToLook = 15000;
 		this.randomizeTiers = true;
 		this.allowTalking = false;
@@ -160,6 +160,15 @@ export class Lobby extends Game {
 					let index = Math.floor(
 						Math.random() * this.deck.tiers[i].foods.length
 					);
+					if (
+						i === 4 &&
+						this.deck.tiers[i].foods.findIndex(
+							(food) => food.name === 'Chocolate'
+						) != -1
+					)
+						index = this.deck.tiers[i].foods.findIndex(
+							(food) => food.name === 'Chocolate'
+						);
 					for (const player of this.players) {
 						player.deck.tiers[i].foods.push(
 							this.deck.tiers[i].foods[index]
