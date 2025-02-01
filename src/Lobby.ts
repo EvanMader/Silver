@@ -38,7 +38,6 @@ export class Lobby extends Game {
 	repeatPets: boolean;
 	numberOfBans: number;
 	bidding: boolean;
-	draftBanPets: boolean;
 
 	public constructor(
 		players: Player[],
@@ -61,7 +60,6 @@ export class Lobby extends Game {
 		this.repeatPets = true;
 		this.numberOfBans = 0;
 		this.bidding = true;
-		this.draftBanPets = true;
 	}
 
 	public static async create(
@@ -162,15 +160,6 @@ export class Lobby extends Game {
 					let index = Math.floor(
 						Math.random() * this.deck.tiers[i].foods.length
 					);
-					if (
-						i === 4 &&
-						this.deck.tiers[i].foods.findIndex(
-							(food) => food.name === 'Chocolate'
-						) != -1
-					)
-						index = this.deck.tiers[i].foods.findIndex(
-							(food) => food.name === 'Chocolate'
-						);
 					for (const player of this.players) {
 						player.deck.tiers[i].foods.push(
 							this.deck.tiers[i].foods[index]
@@ -654,17 +643,6 @@ export class Lobby extends Game {
 			biddingOptions
 		);
 
-		const draftBanPetsOptions = [
-			{ label: 'True', value: 'true' },
-			{ label: 'False', value: 'false' },
-		];
-
-		const draftBanPetsDropdown = createDropdown(
-			'draft_ban_pets',
-			`Ban OP pets: ${this.draftBanPets}`,
-			draftBanPetsOptions
-		);
-
 		let numberOfPetsDraftRow =
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				numberOfPetsDraftDropdown
@@ -709,10 +687,6 @@ export class Lobby extends Game {
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				biddingDropdown
 			);
-		let draftBanPetsRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				draftBanPetsDropdown
-			);
 
 		const settingsMessage1 = await this.channel.send({
 			components: [
@@ -733,7 +707,7 @@ export class Lobby extends Game {
 			],
 		});
 		const settingsMessage3 = await this.channel.send({
-			components: [biddingRow, draftBanPetsRow],
+			components: [biddingRow],
 		});
 		this.lobbyMessages.push(settingsMessage1);
 		this.lobbyMessages.push(settingsMessage2);
@@ -981,22 +955,9 @@ export class Lobby extends Game {
 								)
 							);
 						break;
-
-					case 'draft_ban_pets':
-						this.draftBanPets = interaction.values[0] === 'true';
-
-						draftBanPetsRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'draft_ban_pets',
-									`Ban OP pets: ${this.draftBanPets}`,
-									draftBanPetsOptions
-								)
-							);
-						break;
 				}
 
-				const updatedRows = [biddingRow, draftBanPetsRow];
+				const updatedRows = [biddingRow];
 				await interaction.message
 					.edit({
 						components: updatedRows,
@@ -1011,15 +972,6 @@ export class Lobby extends Game {
 			const tierGroups: Tier[] = [];
 
 			let validPets = this.deck.tiers[i].pets;
-
-			if (this.draftBanPets) {
-				validPets = validPets.filter(
-					(pet) =>
-						pet.name !== 'Snail' &&
-						pet.name !== 'Penguin' &&
-						pet.name !== 'Werewolf'
-				);
-			}
 
 			for (let j = 0; j < this.players.length + 2; j++) {
 				const shuffledPets = [...validPets].sort(
