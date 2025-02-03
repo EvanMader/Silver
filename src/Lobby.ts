@@ -38,6 +38,7 @@ export class Lobby extends Game {
 	repeatPets: boolean;
 	numberOfBans: number;
 	bidding: boolean;
+	banWerewolf: boolean;
 
 	public constructor(
 		players: Player[],
@@ -60,6 +61,7 @@ export class Lobby extends Game {
 		this.repeatPets = true;
 		this.numberOfBans = 0;
 		this.bidding = true;
+		this.banWerewolf = true;
 	}
 
 	public static async create(
@@ -113,6 +115,15 @@ export class Lobby extends Game {
 
 			this.deck = new Deck(true, packs);
 			this.packs = packs;
+
+			if (this.banWerewolf) {
+				const index = this.deck.tiers[4].pets.findIndex(
+					(pet) => pet.name === 'Werewolf'
+				);
+				if (index !== -1) {
+					this.deck.tiers[4].pets.splice(index, 1);
+				}
+			}
 
 			for (let i = 0; i < 6; i++) {
 				const [tandgrisner] = this.deck.tiers[i].pets.splice(
@@ -652,6 +663,17 @@ export class Lobby extends Game {
 			biddingOptions
 		);
 
+		const banWerewolfOptions = [
+			{ label: 'True', value: 'true' },
+			{ label: 'False', value: 'false' },
+		];
+
+		const banWerewolfDropdown = createDropdown(
+			'ban_werewolf',
+			`Ban Werewolf: ${this.banWerewolf}`,
+			banWerewolfOptions
+		);
+
 		let numberOfPetsDraftRow =
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				numberOfPetsDraftDropdown
@@ -696,6 +718,10 @@ export class Lobby extends Game {
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				biddingDropdown
 			);
+		let banWerewolfRow =
+			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				banWerewolfDropdown
+			);
 
 		const settingsMessage1 = await this.channel.send({
 			components: [
@@ -716,7 +742,7 @@ export class Lobby extends Game {
 			],
 		});
 		const settingsMessage3 = await this.channel.send({
-			components: [biddingRow],
+			components: [biddingRow, banWerewolfRow],
 		});
 		this.lobbyMessages.push(settingsMessage1);
 		this.lobbyMessages.push(settingsMessage2);
@@ -964,9 +990,22 @@ export class Lobby extends Game {
 								)
 							);
 						break;
+
+					case 'ban_werewolf':
+						this.banWerewolf = interaction.values[0] === 'true';
+
+						banWerewolfRow =
+							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown(
+									'ban_werewolf',
+									`Ban werewolf: ${this.banWerewolf}`,
+									banWerewolfOptions
+								)
+							);
+						break;
 				}
 
-				const updatedRows = [biddingRow];
+				const updatedRows = [biddingRow, banWerewolfRow];
 				await interaction.message
 					.edit({
 						components: updatedRows,
@@ -1455,12 +1494,11 @@ export class Lobby extends Game {
 			const userSelections = selections.get(userId);
 
 			if (userSelections) {
-				const selectionsList = Array.from(userSelections.values());
-				const filledSelections = selectionsList.filter(
-					(value) => value !== undefined
-				);
+				const selectionsList = Array.from(userSelections.entries());
 
-				for (const label of filledSelections) {
+				selectionsList.sort((a, b) => a[0].localeCompare(b[0]));
+
+				for (const [dropdownId, label] of selectionsList) {
 					const groupNumber = label.charCodeAt(0) - 65;
 					if (availableGroups.has(groupNumber)) {
 						assignedGroups.set(userId, groupNumber);
