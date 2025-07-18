@@ -20,7 +20,7 @@ client.on('ready', async (c) => {
 	console.log(`${c.user.username} is online.`);
 	registerCommandsOnGuild(TOKEN, client.application!.id);
 	handleCommands(client);
-	//sendMessageWithButtons('1321488575145050122', client);
+	sendMessageWithButtons('1321488575145050122', client);
 });
 
 client.login(TOKEN);
