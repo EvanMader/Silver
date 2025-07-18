@@ -44,6 +44,10 @@ export async function sendMessageWithButtons(
 			id: '1321488944625356841',
 			label: 'Sunfish Pack',
 		},
+		{
+			id: '1395573374935105617',
+			label: 'Danger Pack',
+		},
 	];
 
 	const rowPack = new ActionRowBuilder<ButtonBuilder>();
