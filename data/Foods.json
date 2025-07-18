@@ -118,6 +118,6 @@
 	{ "name": "Yggdrasil Fruit", "id": 160, "tier": 6, "packs":[5] },
 	{ "name": "Judean Date", "id": 106, "tier": 6, "packs":[8] },
 	{ "name": "Sardinian Currant", "id": 200, "tier": 6, "packs":[8] },
-	{ "name": "White Okra", "id": 190, "tier": 6, "packs":[8] },
+	{ "name": "White Okra", "id": 199, "tier": 6, "packs":[8] },
 	{ "name": "StarFruit", "id": 171, "tier": 6, "packs":[3] }
 ]
