@@ -9,6 +9,9 @@
 	{ "name": "Egg", "id": 33, "tier": 1, "packs": [4] },
 	{ "name": "Health Potion", "id": 150, "tier": 1, "packs": [5] },
 	{ "name": "Mana Potion", "id": 157, "tier": 1, "packs": [5] },
+	{ "name": "Fresh Water", "id": 191, "tier": 1, "packs": [8] },
+	{ "name": "Gros Michel Banana", "id": 192, "tier": 1, "packs": [8] },
+	{ "name": "Unagi", "id": 196, "tier": 1, "packs": [8] },
 	{ "name": "Asparagus", "id": 117, "tier": 1, "packs": [1] },
 
 	{ "name": "Cupcake", "id": 50, "tier": 2, "packs": [1] },
@@ -24,6 +27,11 @@
 	{ "name": "Churros", "id": 126, "tier": 2, "packs": [1] },
 	{ "name": "Radish", "id": 122, "tier": 2, "packs": [1] },
 	{ "name": "Caramel", "id": 124, "tier": 2, "packs": [3] },
+	{ "name": "Antarctic Krill", "id": 208, "tier": 2, "packs": [8] },
+	{ "name": "Cod Roe", "id": 207, "tier": 2, "packs": [8] },
+	{ "name": "Sudduth Tomato", "id": 195, "tier": 2, "packs": [8] },
+	{ "name": "Lime", "id": 170, "tier": 2, "packs": [2] },
+	{ "name": "Faint Bread", "id": 140, "tier": 2, "packs": [5] },
 
 	{ "name": "Water Of Youth", "id": 161, "tier": 3, "packs": [5] },
 	{ "name": "Garlic", "id": 38, "tier": 3, "packs": [1] },
@@ -40,6 +48,11 @@
 	{ "name": "Sausage", "id": 114, "tier": 3, "packs": [3] },
 	{ "name": "Seaweed", "id": 184, "tier": 3, "packs": [3] },
 	{ "name": "Brussels Sprout", "id": 118, "tier": 3, "packs": [1] },
+	{ "name": "Carrot Parisier", "id": 201, "tier": 3, "packs": [8] },
+	{ "name": "Geechee Red Pea", "id": 211, "tier": 3, "packs": [8] },
+	{ "name": "White Truffle", "id": 198, "tier": 3, "packs": [8] },
+	{ "name": "Blackberry", "id": 172, "tier": 3, "packs": [2] },
+	{ "name": "Squash", "id": 121, "tier": 3, "packs": [2] },
 
 	{ "name": "Love Potion", "id": 155, "tier": 4, "packs": [5] },
 	{ "name": "Canned Food", "id": 16, "tier": 4, "packs": [1] },
@@ -59,6 +72,9 @@
 	{ "name": "Cheese", "id": 19, "tier": 4, "packs": [3] },
 	{ "name": "Oyster Mushroom", "id": 183, "tier": 4, "packs": [4] },
 	{ "name": "Cauliflower", "id": 137, "tier": 4, "packs": [7] },
+	{ "name": "Chickpea", "id": 189, "tier": 4, "packs": [8] },
+	{ "name": "Maple Syrup", "id": 194, "tier": 4, "packs": [8] },
+	{ "name": "Vanilla Bean", "id": 197, "tier": 4, "packs": [8] },
 
 	{ "name": "Easter Egg", "id": 142, "tier": 5, "packs": [5] },
 	{ "name": "Chili", "id": 22, "tier": 5, "packs": [1] },
@@ -79,6 +95,8 @@
 	{ "name": "Strawberry Jam", "id": 168, "tier": 5, "packs": [3] },
 	{ "name": "Taco", "id": 84, "tier": 5, "packs": [3] },
 	{ "name": "Kiwano", "id": 181, "tier": 5, "packs": [7] },
+	{ "name": "Cocoa Bean", "id": 190, "tier": 5, "packs": [8] },
+	{ "name": "Oblonot", "id": 209, "tier": 5, "packs": [8] },
 
 	{ "name": "Melon", "id": 96, "tier": 6, "packs": [1] },
 	{ "name": "Mushroom", "id": 51, "tier": 6, "packs": [1] },
@@ -97,5 +115,9 @@
 	{ "name": "Konpeito", "id": 154, "tier": 6, "packs": [5] },
 	{ "name": "Peach Of Immortality", "id": 152, "tier": 6, "packs": [5] },
 	{ "name": "Celery", "id": 120, "tier": 6, "packs": [3] },
-	{ "name": "Yggdrasil Fruit", "id": 160, "tier": 6, "packs":[5] }
+	{ "name": "Yggdrasil Fruit", "id": 160, "tier": 6, "packs":[5] },
+	{ "name": "Judean Date", "id": 106, "tier": 6, "packs":[8] },
+	{ "name": "Sardinian Currant", "id": 200, "tier": 6, "packs":[8] },
+	{ "name": "White Okra", "id": 190, "tier": 6, "packs":[8] },
+	{ "name": "StarFruit", "id": 171, "tier": 6, "packs":[3] }
 ]
