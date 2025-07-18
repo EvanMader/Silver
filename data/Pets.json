@@ -163,7 +163,7 @@
 	{ "name": "Rabbit", "id": 60, "tier": 3, "packs": [1] },
 	{ "name": "Sheep", "id": 68, "tier": 3, "packs": [1] },
 	{ "name": "Flying Squirrel", "id": 227, "tier": 3, "packs": [2] },
-	{ "name": "Goldfish", "id": 121, "tier": 3, "packs": [1] },
+	{ "name": "Goldfish", "id": 121, "tier": 2, "packs": [1] },
 	{ "name": "Hare", "id": 551, "tier": 3, "packs": [2] },
 	{ "name": "Hatching Chick", "id": 91, "tier": 3, "packs": [2] },
 	{ "name": "Hoopoe Bird", "id": 235, "tier": 3, "packs": [2] },
@@ -337,7 +337,7 @@
 	{ "name": "Longcomb Sawfish", "id": 420, "tier": 4, "packs": [8] },
 	{ "name": "Tasmanian Devil", "id": 437, "tier": 4, "packs": [8] },
 
-	{ "name": "Secretary Bird", "id": 259, "tier": [5] },
+	{ "name": "Secretary Bird", "id": 259, "tier": 5, "packs": [4] },
 	{ "name": "Armadillo", "id": 166, "tier": 5, "packs": [1] },
 	{ "name": "Cow", "id": 15, "tier": 5, "packs": [1] },
 	{ "name": "Crocodile", "id": 19, "tier": 5, "packs": [1] },
