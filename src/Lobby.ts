@@ -117,76 +117,90 @@ export class Lobby extends Game {
 			this.packs = packs;
 
 			if (this.banWerewolf) {
-				const index = this.deck.tiers[4].pets.findIndex(
-					(pet) => pet.name === 'Werewolf'
-				);
+				const index = this.deck.tiers[4].pets.findIndex( (pet) => pet.name === 'Werewolf');
 				if (index !== -1) {
 					this.deck.tiers[4].pets.splice(index, 1);
 				}
 			}
 
 			for (let i = 0; i < 6; i++) {
-				const [tandgrisner] = this.deck.tiers[i].pets.splice(
-					this.deck.tiers[i].pets.findIndex(
-						(p) => p.name === 'Tandgrisner'
-					),
-					1
-				);
-				let tandgnostUsed = false;
-				for (let j = 0; j < 10 - this.numberOfPetsDraft; j++) {
-					let index = Math.floor(
-						Math.random() * this.deck.tiers[i].pets.length
-					);
-					let pet = this.deck.tiers[i].pets[index];
-					if (pet.name === 'Tandgnost') {
-						if (j == 10 - this.numberOfPetsDraft - 1) {
-							j--;
-							continue;
-						}
-						tandgnostUsed = true;
-						for (const player of this.players) {
-							player.deck.tiers[i].pets.push(pet);
-						}
+			const tandgrisnerIndex = this.deck.tiers[i].pets.findIndex(
+				(p) => p.name === 'Tandgrisner'
+			);
+			const tandgnostIndex = this.deck.tiers[i].pets.findIndex(
+				(p) => p.name === 'Tandgnost'
+			);
+			
+			let tandgrisner = null;
+			let tandgnost = null;
+			
+			if (tandgrisnerIndex !== -1) {
+				[tandgrisner] = this.deck.tiers[i].pets.splice(tandgrisnerIndex, 1);
+			}
+			
+			if (tandgnostIndex !== -1) {
+				const adjustedIndex = tandgrisnerIndex !== -1 && tandgrisnerIndex < tandgnostIndex ? 
+				tandgnostIndex - 1 : tandgnostIndex;
+				[tandgnost] = this.deck.tiers[i].pets.splice(adjustedIndex, 1);
+			}
 
-						if (tandgrisner) {
-							for (const player of this.players) {
-								player.deck.tiers[i].pets.push(tandgrisner);
-							}
-						}
+			if (tandgrisner && tandgnost) {
+				this.deck.tiers[i].pets.push(tandgnost);
+			}
 
-						this.deck.tiers[i].pets.splice(index, 1);
-					} else {
-						for (const player of this.players) {
-							player.deck.tiers[i].pets.push(pet);
-						}
+			let tandgnostUsed = false;
 
-						this.deck.tiers[i].pets.splice(index, 1);
+			for (let j = 0; j < 10 - this.numberOfPetsDraft; j++) {
+				let index = Math.floor(Math.random() * this.deck.tiers[i].pets.length);
+				let pet = this.deck.tiers[i].pets[index];
+
+				if (pet.name === 'Tandgnost') {
+				if (j >= 10 - this.numberOfPetsDraft - 1 && tandgrisner) {
+					j--;
+					continue;
+				}
+				tandgnostUsed = true;
+				for (const player of this.players) {
+					player.deck.tiers[i].pets.push(pet);
+					if (tandgrisner) {
+					player.deck.tiers[i].pets.push(tandgrisner);
 					}
 				}
-				if (!tandgnostUsed && tandgrisner) {
+				this.deck.tiers[i].pets.splice(index, 1);
+				if (tandgrisner) {
+					j++;
+				}
+				} else {
+				for (const player of this.players) {
+					player.deck.tiers[i].pets.push(pet);
+				}
+				this.deck.tiers[i].pets.splice(index, 1);
+				}
+			}
+
+			if (!tandgnostUsed) {
+				if (tandgrisner && !tandgnost) {
 					this.deck.tiers[i].pets.push(tandgrisner);
 				}
+			}
 
-				for (let j = 0; j < 3 - this.numberOfFoodsDraft; j++) {
-					let index = Math.floor(
-						Math.random() * this.deck.tiers[i].foods.length
-					);
-					if (
-						i === 4 &&
-						this.deck.tiers[i].foods.findIndex(
-							(food) => food.name === 'Chocolate'
-						) != -1
-					)
-						index = this.deck.tiers[i].foods.findIndex(
-							(food) => food.name === 'Chocolate'
-						);
-					for (const player of this.players) {
-						player.deck.tiers[i].foods.push(
-							this.deck.tiers[i].foods[index]
-						);
-					}
-					this.deck.tiers[i].foods.splice(index, 1);
+			for (let j = 0; j < 3 - this.numberOfFoodsDraft; j++) {
+				let index = Math.floor(Math.random() * this.deck.tiers[i].foods.length);
+				
+				if (
+				i === 4 &&
+				this.deck.tiers[i].foods.findIndex((food) => food.name === 'Chocolate') != -1
+				) {
+				index = this.deck.tiers[i].foods.findIndex(
+					(food) => food.name === 'Chocolate'
+				);
 				}
+				
+				for (const player of this.players) {
+				player.deck.tiers[i].foods.push(this.deck.tiers[i].foods[index]);
+				}
+				this.deck.tiers[i].foods.splice(index, 1);
+			}
 			}
 			await this.channel.send({
 				content: `__**Randomly Selected ${
