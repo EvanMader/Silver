@@ -38,7 +38,6 @@ export class Lobby extends Game {
 	repeatPets: boolean;
 	numberOfBans: number;
 	bidding: boolean;
-	banWerewolf: boolean;
 
 	public constructor(
 		players: Player[],
@@ -61,7 +60,6 @@ export class Lobby extends Game {
 		this.repeatPets = true;
 		this.numberOfBans = 0;
 		this.bidding = true;
-		this.banWerewolf = true;
 	}
 
 	public static async create(
@@ -115,13 +113,6 @@ export class Lobby extends Game {
 
 			this.deck = new Deck(true, packs);
 			this.packs = packs;
-
-			if (this.banWerewolf) {
-				const index = this.deck.tiers[4].pets.findIndex( (pet) => pet.name === 'Werewolf');
-				if (index !== -1) {
-					this.deck.tiers[4].pets.splice(index, 1);
-				}
-			}
 
 			for (let i = 0; i < 6; i++) {
 			const tandgrisnerIndex = this.deck.tiers[i].pets.findIndex(
@@ -677,17 +668,6 @@ export class Lobby extends Game {
 			biddingOptions
 		);
 
-		const banWerewolfOptions = [
-			{ label: 'True', value: 'true' },
-			{ label: 'False', value: 'false' },
-		];
-
-		const banWerewolfDropdown = createDropdown(
-			'ban_werewolf',
-			`Ban Werewolf: ${this.banWerewolf}`,
-			banWerewolfOptions
-		);
-
 		let numberOfPetsDraftRow =
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				numberOfPetsDraftDropdown
@@ -732,10 +712,6 @@ export class Lobby extends Game {
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				biddingDropdown
 			);
-		let banWerewolfRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				banWerewolfDropdown
-			);
 
 		const settingsMessage1 = await this.channel.send({
 			components: [
@@ -756,7 +732,7 @@ export class Lobby extends Game {
 			],
 		});
 		const settingsMessage3 = await this.channel.send({
-			components: [biddingRow, banWerewolfRow],
+			components: [biddingRow],
 		});
 		this.lobbyMessages.push(settingsMessage1);
 		this.lobbyMessages.push(settingsMessage2);
@@ -1004,22 +980,9 @@ export class Lobby extends Game {
 								)
 							);
 						break;
-
-					case 'ban_werewolf':
-						this.banWerewolf = interaction.values[0] === 'true';
-
-						banWerewolfRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'ban_werewolf',
-									`Ban werewolf: ${this.banWerewolf}`,
-									banWerewolfOptions
-								)
-							);
-						break;
 				}
 
-				const updatedRows = [biddingRow, banWerewolfRow];
+				const updatedRows = [biddingRow];
 				await interaction.message
 					.edit({
 						components: updatedRows,
