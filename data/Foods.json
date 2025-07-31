@@ -97,6 +97,7 @@
 	{ "name": "Kiwano", "id": 181, "tier": 5, "packs": [7] },
 	{ "name": "Cocoa Bean", "id": 190, "tier": 5, "packs": [8] },
 	{ "name": "Oblonot", "id": 209, "tier": 5, "packs": [8] },
+	{ "name": "Honeydew Melon", "id": 193, "tier": 5, "packs": [4] },
 
 	{ "name": "Melon", "id": 96, "tier": 6, "packs": [1] },
 	{ "name": "Mushroom", "id": 51, "tier": 6, "packs": [1] },
