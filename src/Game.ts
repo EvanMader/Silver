@@ -146,15 +146,32 @@ export class Game {
 
 		const allOverlays: { input: Buffer; top: number; left: number }[] = [];
 
+		const loadImageSafe = async (path: string): Promise<Buffer> => {
+			try {
+				return await sharp(path)
+					.resize(overlayWidth, overlayHeight, {
+						fit: 'contain',
+						background: { r: 0, g: 0, b: 0, alpha: 0 },
+					})
+					.toBuffer();
+			} catch {
+				return await sharp({
+					create: {
+						width: overlayWidth,
+						height: overlayHeight,
+						channels: 4,
+						background: { r: 255, g: 255, b: 255, alpha: 1 },
+					},
+				}).png().toBuffer();
+			}
+		};
+
 		for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
 			const { pets, foods } = tiers[tierIndex];
 
-			const tierTop =
-				tierIndex * (overlayHeight + verticalSpacing) + verticalSpacing;
+			const tierTop = tierIndex * (overlayHeight + verticalSpacing) + verticalSpacing;
 
-			const numberImagePath = `./data/sprites/numbers/${
-				tierIndex + 1
-			}.png`;
+			const numberImagePath = `./data/sprites/numbers/${tierIndex + 1}.png`;
 			const numberBuffer = await sharp(numberImagePath)
 				.resize(overlayWidth, overlayHeight)
 				.toBuffer();
@@ -166,41 +183,23 @@ export class Game {
 			});
 
 			const petOverlays = pets.map(async (Pet, petIndex) => {
-				const sanitizedPet = Pet.name
-					.replace(/[^a-zA-Z0-9]/g, '')
-					.replace(/\s+/g, '');
+				const sanitizedPet = Pet.name.replace(/[^a-zA-Z0-9]/g, '').replace(/\s+/g, '');
 				const imgPath = `./data/sprites/pets/${sanitizedPet}.png`;
 
-				const petLeft =
-					(petIndex + 1) * (overlayWidth + horizontalSpacing) + 10;
+				const petLeft = (petIndex + 1) * (overlayWidth + horizontalSpacing) + 10;
 
-				return sharp(imgPath)
-					.resize(overlayWidth, overlayHeight, { fit: 'contain', background: {r: 0, g: 0, b: 0, alpha: 0} })
-					.toBuffer()
-					.then((buffer) => ({
-						input: buffer,
-						top: tierTop,
-						left: petLeft,
-					}));
+				const buffer = await loadImageSafe(imgPath);
+				return { input: buffer, top: tierTop, left: petLeft };
 			});
 
 			const foodOverlays = foods.map(async (Food, foodIndex) => {
-				const sanitizedFood = Food.name
-					.replace(/[^a-zA-Z0-9]/g, '')
-					.replace(/\s+/g, '');
+				const sanitizedFood = Food.name.replace(/[^a-zA-Z0-9]/g, '').replace(/\s+/g, '');
 				const imgPath = `./data/sprites/foods/${sanitizedFood}.png`;
 
-				const foodLeft =
-					(foodIndex + 11) * (overlayWidth + horizontalSpacing) + 32;
+				const foodLeft = (foodIndex + 11) * (overlayWidth + horizontalSpacing) + 32;
 
-				return sharp(imgPath)
-					.resize(overlayWidth, overlayHeight, { fit: 'contain', background: {r: 0, g: 0, b: 0, alpha: 0} })
-					.toBuffer()
-					.then((buffer) => ({
-						input: buffer,
-						top: tierTop,
-						left: foodLeft,
-					}));
+				const buffer = await loadImageSafe(imgPath);
+				return { input: buffer, top: tierTop, left: foodLeft };
 			});
 
 			const tierOverlays = [...petOverlays, ...foodOverlays];
@@ -212,9 +211,7 @@ export class Game {
 		const resultBuffer = await sharp('./data/sprites/PetViewer.png')
 			.resize({
 				width: 800,
-				height:
-					tiers.length * (overlayHeight + verticalSpacing) +
-					verticalSpacing,
+				height: tiers.length * (overlayHeight + verticalSpacing) + verticalSpacing,
 			})
 			.composite(allOverlays)
 			.toBuffer();
@@ -241,9 +238,7 @@ export class Game {
 			const tierTop =
 				(tierIndex - skipped) * (overlayHeight + verticalSpacing) + verticalSpacing;
 
-			const numberImagePath = `./data/sprites/numbers/${
-				String.fromCharCode(97 + tierIndex)
-			}.png`;
+			const numberImagePath = `./data/sprites/numbers/${String.fromCharCode(97 + tierIndex)}.png`;
 			const numberBuffer = await sharp(numberImagePath)
 				.resize(overlayWidth, overlayHeight)
 				.toBuffer();
@@ -254,42 +249,44 @@ export class Game {
 				left: 15,
 			});
 
+			const loadImageSafe = async (path: string): Promise<Buffer> => {
+				try {
+					return await sharp(path)
+						.resize(overlayWidth, overlayHeight, {
+							fit: 'contain',
+							background: { r: 0, g: 0, b: 0, alpha: 0 },
+						})
+						.toBuffer();
+				} catch {
+					return await sharp({
+						create: {
+							width: overlayWidth,
+							height: overlayHeight,
+							channels: 4,
+							background: { r: 255, g: 255, b: 255, alpha: 1 },
+						},
+					}).png().toBuffer();
+				}
+			};
+
 			const petOverlays = pets.map(async (Pet, petIndex) => {
-				const sanitizedPet = Pet.name
-					.replace(/[^a-zA-Z0-9]/g, '')
-					.replace(/\s+/g, '');
+				const sanitizedPet = Pet.name.replace(/[^a-zA-Z0-9]/g, '').replace(/\s+/g, '');
 				const imgPath = `./data/sprites/pets/${sanitizedPet}.png`;
 
-				const petLeft =
-					(petIndex + 1) * (overlayWidth + horizontalSpacing) + 10;
+				const petLeft = (petIndex + 1) * (overlayWidth + horizontalSpacing) + 10;
 
-				return sharp(imgPath)
-					.resize(overlayWidth, overlayHeight, { fit: 'contain', background: {r: 0, g: 0, b: 0, alpha: 0} })
-					.toBuffer()
-					.then((buffer) => ({
-						input: buffer,
-						top: tierTop,
-						left: petLeft,
-					}));
+				const buffer = await loadImageSafe(imgPath);
+				return { input: buffer, top: tierTop, left: petLeft };
 			});
 
 			const foodOverlays = foods.map(async (Food, foodIndex) => {
-				const sanitizedFood = Food.name
-					.replace(/[^a-zA-Z0-9]/g, '')
-					.replace(/\s+/g, '');
+				const sanitizedFood = Food.name.replace(/[^a-zA-Z0-9]/g, '').replace(/\s+/g, '');
 				const imgPath = `./data/sprites/foods/${sanitizedFood}.png`;
 
-				const foodLeft =
-					(foodIndex + 11) * (overlayWidth + horizontalSpacing) + 32;
+				const foodLeft = (foodIndex + 11) * (overlayWidth + horizontalSpacing) + 32;
 
-				return sharp(imgPath)
-					.resize(overlayWidth, overlayHeight, { fit: 'contain', background: {r: 0, g: 0, b: 0, alpha: 0} })
-					.toBuffer()
-					.then((buffer) => ({
-						input: buffer,
-						top: tierTop,
-						left: foodLeft,
-					}));
+				const buffer = await loadImageSafe(imgPath);
+				return { input: buffer, top: tierTop, left: foodLeft };
 			});
 
 			const tierOverlays = [...petOverlays, ...foodOverlays];
