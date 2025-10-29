@@ -48,6 +48,10 @@ export async function sendMessageWithButtons(
 			id: '1395573374935105617',
 			label: 'Danger Pack',
 		},
+		{
+			id: '1433148084573175950',
+			label: 'Vampire Pack',
+		},
 	];
 
 	const rowPack = new ActionRowBuilder<ButtonBuilder>();
