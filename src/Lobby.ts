@@ -115,11 +115,11 @@ export class Lobby extends Game {
 			this.packs = packs;
 
 			for (let i = 0; i < 6; i++) {
-			const tandgrisnerIndex = this.deck.tiers[i].pets.findIndex(
-				(p) => p.name === 'Tandgrisner'
+				const tandgrisnerIndex = this.deck.tiers[i].pets.findIndex(
+					(p) => p.name === 'Tandgrisner'
 			);
-			const tandgnostIndex = this.deck.tiers[i].pets.findIndex(
-				(p) => p.name === 'Tandgnost'
+				const tandgnostIndex = this.deck.tiers[i].pets.findIndex(
+					(p) => p.name === 'Tandgnost'
 			);
 			
 			let tandgrisner = null;
@@ -146,26 +146,26 @@ export class Lobby extends Game {
 				let pet = this.deck.tiers[i].pets[index];
 
 				if (pet.name === 'Tandgnost') {
-				if (j >= 10 - this.numberOfPetsDraft - 1 && tandgrisner) {
-					j--;
-					continue;
-				}
-				tandgnostUsed = true;
-				for (const player of this.players) {
-					player.deck.tiers[i].pets.push(pet);
-					if (tandgrisner) {
-					player.deck.tiers[i].pets.push(tandgrisner);
+					if (j >= 10 - this.numberOfPetsDraft - 1 && tandgrisner) {
+						j--;
+						continue;
 					}
-				}
-				this.deck.tiers[i].pets.splice(index, 1);
-				if (tandgrisner) {
-					j++;
-				}
-				} else {
-				for (const player of this.players) {
-					player.deck.tiers[i].pets.push(pet);
-				}
-				this.deck.tiers[i].pets.splice(index, 1);
+					tandgnostUsed = true;
+					for (const player of this.players) {
+						player.deck.tiers[i].pets.push(pet);
+						if (tandgrisner) {
+							player.deck.tiers[i].pets.push(tandgrisner);
+						}
+					}
+					this.deck.tiers[i].pets.splice(index, 1);
+					if (tandgrisner) {
+						j++;
+					}
+					} else {
+					for (const player of this.players) {
+						player.deck.tiers[i].pets.push(pet);
+					}
+					this.deck.tiers[i].pets.splice(index, 1);
 				}
 			}
 
@@ -234,6 +234,9 @@ export class Lobby extends Game {
 				let timer: number =
 					this.timerPerGroup * (this.players.length + 2) +
 					this.timerBase;
+				if (this.bidding) {
+					timer += this.timerPerGroup * this.numberOfBans;
+				}
 				await this.channel.send(`__# TIER ${order[i] + 1}__`);
 
 				if (!this.bidding) {
@@ -646,7 +649,7 @@ export class Lobby extends Game {
 			repeatPetOptions
 		);
 
-		const numberOfBansOptions = Array.from({ length: 3 }, (_, i) => ({
+		const numberOfBansOptions = Array.from({ length: 6 }, (_, i) => ({
 			label: `${i}`,
 			value: `${i}`,
 		}));
@@ -997,8 +1000,9 @@ export class Lobby extends Game {
 			const tierGroups: Tier[] = [];
 
 			let validPets = this.deck.tiers[i].pets;
+			let numberOfGroups = this.bidding ? this.players.length + 2 + this.numberOfBans : this.players.length + 2;
 
-			for (let j = 0; j < this.players.length + 2; j++) {
+			for (let j = 0; j < numberOfGroups; j++) {
 				const shuffledPets = [...validPets].sort(
 					() => Math.random() - 0.5
 				);
@@ -1242,18 +1246,30 @@ export class Lobby extends Game {
 				firstTimeout
 			);
 
-			const numPlayers = this.players.length;
 			const numGroups = this.deck.groups[tier].length;
-			const rows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
-			const messages: Message[] = [];
+			const pickRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
+			const banRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
+			const pickMessages: Message[] = [];
+			const banMessages: Message[] = [];
 
 			const selections = new Map<string, Map<string, string>>();
 			const submittedUsers = new Set<string>();
 
-			for (let i = 0; i < numPlayers; i++) {
-				const selectMenu = new StringSelectMenuBuilder().setCustomId(
-					`Option-${i + 1}`
-				);
+			for (let i = 0; i < this.numberOfBans; i++) {
+				const banNumber = i + 1;
+
+				const suffix =
+					banNumber % 10 === 1 && banNumber % 100 !== 11
+						? 'st'
+						: banNumber % 10 === 2 && banNumber % 100 !== 12
+						? 'nd'
+						: banNumber % 10 === 3 && banNumber % 100 !== 13
+						? 'rd'
+						: 'th';
+
+				const selectMenu = new StringSelectMenuBuilder()
+					.setCustomId(`Ban ${banNumber}`)
+					.setPlaceholder(`${banNumber}${suffix} Ban`);
 
 				for (let j = 0; j < numGroups; j++) {
 					const label = String.fromCharCode(65 + j);
@@ -1267,17 +1283,61 @@ export class Lobby extends Game {
 					new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 						selectMenu
 					);
-				rows.push(actionRow);
+				banRows.push(actionRow);
 
-				if (rows.length % 5 === 0 || i === numPlayers - 1) {
-					messages.push(
+				if (banRows.length % 5 === 0 || i === this.numberOfBans - 1) {
+					const isFirstGroup = banMessages.length === 0;
+					banMessages.push(
 						await this.channel.send({
-							content: '',
-							components: rows,
+							content: isFirstGroup ? '__**Bans**__' : '',
+							components: banRows,
 						})
 					);
 
-					rows.length = 0;
+					banRows.length = 0;
+				}
+			}
+
+			for (let i = 0; i < this.players.length + this.numberOfBans; i++) {
+				const pickNumber = i + 1;
+
+				const suffix =
+					pickNumber % 10 === 1 && pickNumber % 100 !== 11
+						? 'st'
+						: pickNumber % 10 === 2 && pickNumber % 100 !== 12
+						? 'nd'
+						: pickNumber % 10 === 3 && pickNumber % 100 !== 13
+						? 'rd'
+						: 'th';
+
+				const selectMenu = new StringSelectMenuBuilder()
+					.setCustomId(`Pick ${pickNumber}`)
+					.setPlaceholder(`${pickNumber}${suffix} Pick`);
+
+				for (let j = 0; j < numGroups; j++) {
+					const label = String.fromCharCode(65 + j);
+					selectMenu.addOptions({
+						label: label,
+						value: label,
+					});
+				}
+
+				const actionRow =
+					new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+						selectMenu
+					);
+				pickRows.push(actionRow);
+
+				if (pickRows.length % 5 === 0 || i === this.players.length + this.numberOfBans - 1) {
+					const isFirstGroup = pickMessages.length === 0;
+					pickMessages.push(
+						await this.channel.send({
+							content: isFirstGroup ? '__**Picks**__' : '',
+							components: pickRows,
+						})
+					);
+
+					pickRows.length = 0;
 				}
 			}
 
@@ -1297,7 +1357,7 @@ export class Lobby extends Game {
 					teamButton
 				);
 
-			messages.push(
+			pickMessages.push(
 				await this.channel.send({
 					content: `${this.getHammerTime(timer + 1000)}`,
 					components: [buttonRow],
@@ -1305,8 +1365,7 @@ export class Lobby extends Game {
 			);
 
 			const filter = (interaction: Interaction) =>
-				(interaction.isStringSelectMenu() &&
-					interaction.customId.startsWith('Option-')) ||
+				(interaction.isStringSelectMenu() && (interaction.customId.startsWith('Pick') || interaction.customId.startsWith('Ban'))) ||
 				(interaction.isButton() && interaction.customId === 'submit') ||
 				(interaction.isButton() &&
 					interaction.customId === 'team_button');
@@ -1397,8 +1456,11 @@ export class Lobby extends Game {
 				}
 			});
 
-			collector.on('end', () => {
-				for (const message of messages) {
+			collector.on('end', async () => {
+				for (const message of banMessages) {
+					message.delete().catch(() => null);
+				}
+				for (const message of pickMessages) {
 					message.delete().catch(() => null);
 				}
 				clearTimeout(interval!);
@@ -1414,7 +1476,7 @@ export class Lobby extends Game {
 							)
 						);
 
-						for (let i = 0; i < numPlayers; i++) {
+						for (let i = 0; i < this.players.length; i++) {
 							const optionsArray = Array.from(availableOptions);
 							const randomOption =
 								optionsArray[
@@ -1423,7 +1485,7 @@ export class Lobby extends Game {
 									)
 								];
 							randomSelections.set(
-								`Option-${i + 1}`,
+								`Pick ${i + 1}`,
 								randomOption
 							);
 							availableOptions.delete(randomOption);
@@ -1433,7 +1495,7 @@ export class Lobby extends Game {
 					}
 				}
 
-				const assignGroups = this.assignGroups(
+				const assignGroups = await this.assignGroups(
 					this.players,
 					selections
 				);
@@ -1455,15 +1517,76 @@ export class Lobby extends Game {
 		});
 	}
 
-	private assignGroups(
-		players: Player[],
-		selections: Map<string, Map<string, string>>
-	): Map<string, number> {
+	private async assignGroups( players: Player[], selections: Map<string, Map<string, string>>): Promise<Map<string, number>> {
 		const assignedGroups = new Map<string, number>();
+
+		const banCounts = new Map<number, number>();
+		selections.forEach((userSelections) => {
+			userSelections.forEach((label, dropdownId) => {
+			if (dropdownId.startsWith("Ban")) {
+				const groupNumber = label.charCodeAt(0) - 65;
+				banCounts.set(groupNumber, (banCounts.get(groupNumber) ?? 0) + 1);
+			}
+			});
+		});
+
+		const bannedGroups = new Set<number>();
+		const numberOfBans = this.numberOfBans;
+
+		if (numberOfBans > 0) {
+			let sortedBans = Array.from(banCounts.entries())
+				.sort((a, b) => b[1] - a[1]);
+
+			let bannedSoFar = 0;
+			let i = 0;
+			while (bannedSoFar < numberOfBans && i < sortedBans.length) {
+				const sameCountGroups: number[] = [sortedBans[i][0]];
+				const count = sortedBans[i][1];
+
+				let j = i + 1;
+				while (j < sortedBans.length && sortedBans[j][1] === count) {
+					sameCountGroups.push(sortedBans[j][0]);
+					j++;
+				}
+
+				for (const group of sameCountGroups.sort(() => Math.random() - 0.5)) {
+					if (bannedSoFar < numberOfBans) {
+						bannedGroups.add(group);
+						bannedSoFar++;
+					}
+				}
+
+				i = j;
+			}
+
+			const sortedBanCounts = Array.from(banCounts.entries())
+				.sort((a, b) => b[1] - a[1]);
+
+			const voteCountLines: string[] = [];
+			sortedBanCounts.forEach(([groupNumber, count]) => {
+				const letter = String.fromCharCode(65 + groupNumber);
+				voteCountLines.push(`${letter}: ${count} vote${count === 1 ? '' : 's'}`);
+			});
+
+			const bannedLetters = Array.from(bannedGroups)
+				.sort((a,b) => a - b)
+				.map(g => String.fromCharCode(65 + g));
+
+			let content = `__**Ban Vote Tally**__\n${voteCountLines.join('\n')}\n\n`;
+			if (bannedLetters.length > 0) {
+				content += `__**Banned Groups**__: ${bannedLetters.join(', ')}`;
+			} else {
+				content += `No groups were banned.`;
+			}
+
+			await this.channel.send({ content }).catch(() => null);
+		}
 
 		const availableGroups = new Set<number>();
 		for (let i = 0; i < this.deck.groups.length; i++) {
-			availableGroups.add(i);
+			if (!bannedGroups.has(i)) {
+				availableGroups.add(i);
+			}
 		}
 
 		for (const player of players) {
@@ -1471,25 +1594,23 @@ export class Lobby extends Game {
 			const userSelections = selections.get(userId);
 
 			if (userSelections) {
-				const selectionsList = Array.from(userSelections.entries());
-
-				selectionsList.sort((a, b) => a[0].localeCompare(b[0]));
+				const selectionsList = Array.from(userSelections.entries())
+					.filter(([dropdownId, _]) => dropdownId.startsWith("Pick"))
+					.sort((a, b) => a[0].localeCompare(b[0]));
 
 				for (const [dropdownId, label] of selectionsList) {
 					const groupNumber = label.charCodeAt(0) - 65;
 					if (availableGroups.has(groupNumber)) {
 						assignedGroups.set(userId, groupNumber);
 						availableGroups.delete(groupNumber);
-						break;
+					break;
 					}
 				}
 			}
 
 			if (!assignedGroups.has(userId) && availableGroups.size > 0) {
-				const randomGroup =
-					Array.from(availableGroups)[
-						Math.floor(Math.random() * availableGroups.size)
-					];
+				const remaining = Array.from(availableGroups);
+				const randomGroup = remaining[Math.floor(Math.random() * remaining.length)];
 				assignedGroups.set(userId, randomGroup);
 				availableGroups.delete(randomGroup);
 			}
