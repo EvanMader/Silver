@@ -342,113 +342,78 @@ export class Lobby extends Game {
 		pick: boolean,
 		selected: number[]
 	) {
-		let remainingTime = timerLength;
-		const countdown = await this.channel.send({
-			content: `<@${player.user.id}> Select one tier ${
-				tier + 1
-			} group to **${pick ? 'pick' : 'ban'}**! You have ${Math.floor(
-				remainingTime / 1000
-			)} seconds remaining.`,
-			files: [
-				{
-					attachment: await this.getGroups(
-						this.deck.groups[tier],
-						selected
-					),
-				},
-			],
-		});
+		try {
+			let remainingTime = timerLength;
 
-		const updateCountdown = async () => {
-			if (remainingTime > 0 && interval !== null) {
-				try {
-					remainingTime -=
-						remainingTime % 5000 === 0
-							? 5000
-							: remainingTime % 5000;
-					const nextTimeout =
-						remainingTime >= 5000 ? 5000 : remainingTime;
+			const countdown = await this.channel.send({
+				content: `<@${player.user.id}> Select one tier ${tier + 1} group to **${pick ? 'pick' : 'ban'}**! You have ${Math.floor(
+					remainingTime / 1000
+				)} seconds remaining.`,
+				files: [
+					{
+						attachment: await this.getGroups(
+							this.deck.groups[tier],
+							selected
+						),
+					},
+				],
+			});
 
-					countdown.edit({
-						content: `<@${player.user.id}> Select one tier ${
-							tier + 1
-						} group to **${
-							pick ? 'pick' : 'ban'
-						}**! You have ${Math.floor(
+			let interval: NodeJS.Timeout | null = null;
+
+			const updateCountdown = async () => {
+				if (remainingTime > 0 && interval !== null) {
+					remainingTime -= remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+					const nextTimeout = remainingTime >= 5000 ? 5000 : remainingTime;
+
+					await countdown.edit({
+						content: `<@${player.user.id}> Select one tier ${tier + 1} group to **${pick ? 'pick' : 'ban'}**! You have ${Math.floor(
 							remainingTime / 1000
 						)} seconds remaining.`,
 					});
 
 					interval = setTimeout(updateCountdown, nextTimeout);
-				} catch {}
-			} else {
-				interval = null;
-			}
-		};
+				} else {
+					interval = null;
+				}
+			};
 
-		const firstTimeout =
-			remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+			const firstTimeout = remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+			interval = setTimeout(updateCountdown, firstTimeout);
 
-		let interval: NodeJS.Timeout | null = setTimeout(
-			updateCountdown,
-			firstTimeout
-		);
+			const selectMenu = new StringSelectMenuBuilder()
+				.setCustomId('group_select')
+				.setPlaceholder('Select a group...')
+				.addOptions(
+					this.deck.groups[tier]
+						.map((group, index) => ({
+							label: String.fromCharCode(65 + index),
+							value: `${index}`,
+						}))
+						.filter(o => !selected.includes(Number(o.value)))
+				);
 
-		const selectMenu = new StringSelectMenuBuilder()
-			.setCustomId('group_select')
-			.setPlaceholder('Select a group...')
-			.addOptions(
-				this.deck.groups[tier]
-					.map((group, index) => ({
-						label: String.fromCharCode(65 + index),
-						value: `${index}`,
-					}))
-					.filter(
-						(option) => !selected.includes(Number(option.value))
-					)
-			);
+			const submitButton = new ButtonBuilder().setCustomId('submit').setLabel('Submit').setStyle(ButtonStyle.Primary);
+			const teamButton = new ButtonBuilder().setCustomId('team_button').setLabel('Team').setStyle(ButtonStyle.Success);
 
-		const submitButton = new ButtonBuilder()
-			.setCustomId('submit')
-			.setLabel('Submit')
-			.setStyle(ButtonStyle.Primary);
-
-		const teamButton = new ButtonBuilder()
-			.setCustomId('team_button')
-			.setLabel('Team')
-			.setStyle(ButtonStyle.Success);
-
-		const menuRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				selectMenu
-			);
-		const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-			submitButton,
-			teamButton
-		);
-
-		const actionMessage = await this.channel.send({
-			content: `**${pick ? 'Pick' : 'Ban'}** ${this.getHammerTime(
-				timerLength + 1000
-			)}:`,
-			components: [menuRow, buttonRow],
-		});
-
-		await new Promise<void>((resolve, reject) => {
-			let selectedValue: string | null = null;
-
-			const collector = actionMessage.createMessageComponentCollector({
-				time: timerLength + 1000,
+			const actionMessage = await this.channel.send({
+				content: `**${pick ? 'Pick' : 'Ban'}** ${this.getHammerTime(timerLength + 1000)}:`,
+				components: [
+					new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu),
+					new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton, teamButton),
+				],
 			});
 
-			collector.on(
-				'collect',
-				async (interaction: MessageComponentInteraction) => {
+			await new Promise<void>((resolve, reject) => {
+				let selectedValue: string | null = null;
+
+				const collector = actionMessage.createMessageComponentCollector({
+					time: timerLength + 1000,
+				});
+
+				collector.on('collect', async interaction => {
 					try {
-						if (
-							interaction.isButton() &&
-							interaction.customId === 'team_button'
-						) {
+						if (interaction.customId === 'team_button') {
 							await interaction.deferReply({ ephemeral: true });
 							const teamResponse = await this.sendTeam(player);
 							await interaction.editReply(teamResponse);
@@ -456,82 +421,60 @@ export class Lobby extends Game {
 						}
 
 						if (interaction.user.id !== player.user.id) {
-							await interaction.reply({
+							return interaction.reply({
 								content: 'This is not your selection menu!',
 								ephemeral: true,
 							});
-							return;
 						}
 
-						if (
-							interaction.isStringSelectMenu() &&
-							interaction.customId === 'group_select'
-						) {
+						if (interaction.isStringSelectMenu() && interaction.customId === 'group_select') {
 							selectedValue = interaction.values[0];
-							await interaction
-								.deferUpdate()
-								.catch((error) => console.log(error));
-						} else if (
-							interaction.isButton() &&
-							interaction.customId === 'submit'
-						) {
-							if (selectedValue === null) {
-								await interaction.reply({
-									content:
-										'Please select a group before submitting.',
+							return interaction.deferUpdate();
+						}
+
+						if (interaction.customId === 'submit') {
+							if (!selectedValue) {
+								return interaction.reply({
+									content: 'Please select a group before submitting.',
 									ephemeral: true,
 								});
-							} else {
-								if (collector.ended) return;
-								collector.stop('Success');
 							}
+							if (!collector.ended) collector.stop('Success');
 						}
-					} catch (error) {
-						console.error('Error handling interaction:', error);
-						if (!interaction.replied && !interaction.deferred) {
-							await interaction.reply({
-								content:
-									'An error occurred while processing your interaction.',
-								ephemeral: true,
-							});
-						}
+					} catch (err) {
+						console.error('Interaction error:', err);
 					}
-				}
-			);
+				});
 
-			collector.on('end', async (collected, reason) => {
-				clearTimeout(interval!);
-				interval = null;
-				await actionMessage.delete().catch(() => null);
+				collector.on('end', async (_collected, reason) => {
+					clearTimeout(interval!);
+					interval = null;
+					await actionMessage.delete().catch(() => null);
 
-				if (reason === 'time') {
-					if (pick) await this.pickOption(player, tier, -1, selected);
-					await this.channel.send('You took too long to respond!');
-					resolve();
-				} else if (reason === 'Success') {
-					if (pick)
-						await this.pickOption(
-							player,
-							tier,
-							parseInt(selectedValue!),
-							selected
-						);
-					else
-						await this.banOption(
-							tier,
-							parseInt(selectedValue!),
-							selected
-						);
-					resolve();
-				} else {
-					console.log(
-						'Rejected select group for the following reason: ',
-						reason
-					);
+					if (reason === 'time') {
+						if (pick) await this.pickOption(player, tier, -1, selected);
+						await this.channel.send('You took too long to respond!');
+						return resolve();
+					}
+
+					if (reason === 'Success') {
+						if (pick) {
+							await this.pickOption(player, tier, parseInt(selectedValue!), selected);
+						} else {
+							await this.banOption(tier, parseInt(selectedValue!), selected);
+						}
+						return resolve();
+					}
+
+					console.log('Selection ended for reason:', reason);
 					reject();
-				}
+				});
 			});
-		});
+		} catch (err) {
+			console.error('selectGroup failed:', err);
+			await this.channel.send(`<@${player.user.id}> An error occurred. Defaulting selection.`);
+			if (pick) await this.pickOption(player, tier, -1, selected);
+		}
 	}
 
 	private async lobbyOptions() {
@@ -1193,30 +1136,31 @@ export class Lobby extends Game {
 
 	async biddingDraft(tier: number, timer: number) {
 		await new Promise<void>(async (resolve) => {
-			let remainingTime = timer;
+			try {
+				let remainingTime = timer;
 
-			const priorityMessage =
-				'Priority: ' +
-				this.players
-					.map((player) => player.user.displayName)
-					.join(' => ');
-			const countdown = await this.channel.send({
-				content:
-					`Timer: ${remainingTime / 1000} seconds left.\n` +
-					priorityMessage,
-				files: [
-					{
-						attachment: await this.getGroups(
-							this.deck.groups[tier],
-							[]
-						),
-					},
-				],
-			});
+				const priorityMessage =
+					'Priority: ' +
+					this.players
+						.map((player) => player.user.displayName)
+						.join(' => ');
 
-			const updateCountdown = async () => {
-				if (remainingTime > 0 && interval !== null) {
-					try {
+				const countdown = await this.channel.send({
+					content:
+						`Timer: ${remainingTime / 1000} seconds left.\n` +
+						priorityMessage,
+					files: [
+						{
+							attachment: await this.getGroups(
+								this.deck.groups[tier],
+								[]
+							),
+						},
+					],
+				});
+
+				const updateCountdown = async () => {
+					if (remainingTime > 0 && interval !== null) {
 						remainingTime -=
 							remainingTime % 5000 === 0
 								? 5000
@@ -1224,296 +1168,225 @@ export class Lobby extends Game {
 						const nextTimeout =
 							remainingTime >= 5000 ? 5000 : remainingTime;
 
-						countdown.edit({
+						await countdown.edit({
 							content:
-								`Timer: ${
-									remainingTime / 1000
-								} seconds left.\n` + priorityMessage,
+								`Timer: ${remainingTime / 1000} seconds left.\n` +
+								priorityMessage,
 						});
 
 						interval = setTimeout(updateCountdown, nextTimeout);
-					} catch {}
-				} else {
-					interval = null;
-				}
-			};
+					} else {
+						interval = null;
+					}
+				};
 
-			const firstTimeout =
-				remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+				const firstTimeout =
+					remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
 
-			let interval: NodeJS.Timeout | null = setTimeout(
-				updateCountdown,
-				firstTimeout
-			);
-
-			const numGroups = this.deck.groups[tier].length;
-			const pickRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
-			const banRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
-			const pickMessages: Message[] = [];
-			const banMessages: Message[] = [];
-
-			const selections = new Map<string, Map<string, string>>();
-			const submittedUsers = new Set<string>();
-
-			for (let i = 0; i < this.numberOfBans; i++) {
-				const banNumber = i + 1;
-
-				const suffix =
-					banNumber % 10 === 1 && banNumber % 100 !== 11
-						? 'st'
-						: banNumber % 10 === 2 && banNumber % 100 !== 12
-						? 'nd'
-						: banNumber % 10 === 3 && banNumber % 100 !== 13
-						? 'rd'
-						: 'th';
-
-				const selectMenu = new StringSelectMenuBuilder()
-					.setCustomId(`Ban ${banNumber}`)
-					.setPlaceholder(`${banNumber}${suffix} Ban`);
-
-				for (let j = 0; j < numGroups; j++) {
-					const label = String.fromCharCode(65 + j);
-					selectMenu.addOptions({
-						label: label,
-						value: label,
-					});
-				}
-
-				const actionRow =
-					new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-						selectMenu
-					);
-				banRows.push(actionRow);
-
-				if (banRows.length % 5 === 0 || i === this.numberOfBans - 1) {
-					const isFirstGroup = banMessages.length === 0;
-					banMessages.push(
-						await this.channel.send({
-							content: isFirstGroup ? '__**Bans**__' : '',
-							components: banRows,
-						})
-					);
-
-					banRows.length = 0;
-				}
-			}
-
-			for (let i = 0; i < this.players.length + this.numberOfBans; i++) {
-				const pickNumber = i + 1;
-
-				const suffix =
-					pickNumber % 10 === 1 && pickNumber % 100 !== 11
-						? 'st'
-						: pickNumber % 10 === 2 && pickNumber % 100 !== 12
-						? 'nd'
-						: pickNumber % 10 === 3 && pickNumber % 100 !== 13
-						? 'rd'
-						: 'th';
-
-				const selectMenu = new StringSelectMenuBuilder()
-					.setCustomId(`Pick ${pickNumber}`)
-					.setPlaceholder(`${pickNumber}${suffix} Pick`);
-
-				for (let j = 0; j < numGroups; j++) {
-					const label = String.fromCharCode(65 + j);
-					selectMenu.addOptions({
-						label: label,
-						value: label,
-					});
-				}
-
-				const actionRow =
-					new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-						selectMenu
-					);
-				pickRows.push(actionRow);
-
-				if (pickRows.length % 5 === 0 || i === this.players.length + this.numberOfBans - 1) {
-					const isFirstGroup = pickMessages.length === 0;
-					pickMessages.push(
-						await this.channel.send({
-							content: isFirstGroup ? '__**Picks**__' : '',
-							components: pickRows,
-						})
-					);
-
-					pickRows.length = 0;
-				}
-			}
-
-			const submitButton = new ButtonBuilder()
-				.setCustomId('submit')
-				.setLabel('Submit')
-				.setStyle(ButtonStyle.Primary);
-
-			const teamButton = new ButtonBuilder()
-				.setCustomId('team_button')
-				.setLabel('Team')
-				.setStyle(ButtonStyle.Success);
-
-			const buttonRow =
-				new ActionRowBuilder<ButtonBuilder>().addComponents(
-					submitButton,
-					teamButton
+				let interval: NodeJS.Timeout | null = setTimeout(
+					updateCountdown,
+					firstTimeout
 				);
 
-			pickMessages.push(
-				await this.channel.send({
-					content: `${this.getHammerTime(timer + 1000)}`,
-					components: [buttonRow],
-				})
-			);
+				const numGroups = this.deck.groups[tier].length;
+				const pickRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
+				const banRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
+				const pickMessages: Message[] = [];
+				const banMessages: Message[] = [];
 
-			const filter = (interaction: Interaction) =>
-				(interaction.isStringSelectMenu() && (interaction.customId.startsWith('Pick') || interaction.customId.startsWith('Ban'))) ||
-				(interaction.isButton() && interaction.customId === 'submit') ||
-				(interaction.isButton() &&
-					interaction.customId === 'team_button');
+				const selections = new Map<string, Map<string, string>>();
+				const submittedUsers = new Set<string>();
 
-			const collector = this.channel.createMessageComponentCollector({
-				filter,
-				time: timer + 1000,
-			});
+				for (let i = 0; i < this.numberOfBans; i++) {
+					const banNumber = i + 1;
 
-			collector.on('collect', async (interaction) => {
-				const userId = interaction.user.id;
+					const suffix =
+						banNumber % 10 === 1 && banNumber % 100 !== 11
+							? 'st'
+							: banNumber % 10 === 2 && banNumber % 100 !== 12
+							? 'nd'
+							: banNumber % 10 === 3 && banNumber % 100 !== 13
+							? 'rd'
+							: 'th';
 
-				if (interaction.isStringSelectMenu()) {
-					const dropdownId = interaction.customId;
-					const selectedValue = interaction.values[0];
+					const selectMenu = new StringSelectMenuBuilder()
+						.setCustomId(`Ban ${banNumber}`)
+						.setPlaceholder(`${banNumber}${suffix} Ban`);
 
-					if (!selections.has(userId)) {
-						selections.set(userId, new Map<string, string>());
+					for (let j = 0; j < numGroups; j++) {
+						const label = String.fromCharCode(65 + j);
+						selectMenu.addOptions({ label, value: label });
 					}
 
-					selections.get(userId)!.set(dropdownId, selectedValue);
+					const actionRow =
+						new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+					banRows.push(actionRow);
 
-					await interaction.deferUpdate();
-				} else if (
-					interaction.isButton() &&
-					interaction.customId === 'submit'
-				) {
-					const isPlayer = this.players.some(
-						(player) => player.user.id === userId
-					);
-					if (!isPlayer) {
-						await interaction.reply({
-							content: 'You are not a participant in this draft!',
-							ephemeral: true,
-						});
-						return;
-					}
-
-					if (submittedUsers.has(userId)) {
-						await interaction.reply({
-							content:
-								'You have already submitted your selections!',
-							ephemeral: true,
-						});
-						return;
-					}
-
-					const userSelections = selections.get(userId) ?? new Map();
-
-					submittedUsers.add(userId);
-
-					const formattedSelections = Array.from(
-						userSelections.entries()
-					)
-						.map(([dropdownId, value]) => `${dropdownId}: ${value}`)
-						.join('\n');
-
-					await interaction.reply({
-						content: `Submission received! Your selections:\n${formattedSelections}`,
-						ephemeral: true,
-					});
-
-					if (submittedUsers.size === this.players.length) {
-						collector.stop();
-					}
-				} else if (
-					interaction.isButton() &&
-					interaction.customId === 'team_button'
-				) {
-					const isPlayer = this.players.some(
-						(player) => player.user.id === userId
-					);
-					if (!isPlayer) {
-						await interaction.reply({
-							content: 'You are not a participant in this draft!',
-							ephemeral: true,
-						});
-						return;
-					}
-
-					const player = this.players.find(
-						(player) => player.user.id === userId
-					);
-					await interaction.deferReply({ ephemeral: true });
-					const teamResponse = await this.sendTeam(player!);
-					await interaction.editReply(teamResponse);
-					return;
-				}
-			});
-
-			collector.on('end', async () => {
-				for (const message of banMessages) {
-					message.delete().catch(() => null);
-				}
-				for (const message of pickMessages) {
-					message.delete().catch(() => null);
-				}
-				clearTimeout(interval!);
-				interval = null;
-
-				for (const player of this.players) {
-					const userId = player.user.id;
-					if (!submittedUsers.has(userId)) {
-						const randomSelections = new Map<string, string>();
-						const availableOptions = new Set(
-							Array.from({ length: numGroups }, (_, i) =>
-								String.fromCharCode(65 + i)
-							)
+					if (banRows.length % 5 === 0 || i === this.numberOfBans - 1) {
+						const isFirstGroup = banMessages.length === 0;
+						banMessages.push(
+							await this.channel.send({
+								content: isFirstGroup ? '__**Bans**__' : '',
+								components: banRows,
+							})
 						);
 
-						for (let i = 0; i < this.players.length; i++) {
-							const optionsArray = Array.from(availableOptions);
-							const randomOption =
-								optionsArray[
-									Math.floor(
-										Math.random() * optionsArray.length
-									)
-								];
-							randomSelections.set(
-								`Pick ${i + 1}`,
-								randomOption
-							);
-							availableOptions.delete(randomOption);
+						banRows.length = 0;
+					}
+				}
+
+				for (let i = 0; i < this.players.length + this.numberOfBans; i++) {
+					const pickNumber = i + 1;
+
+					const suffix =
+						pickNumber % 10 === 1 && pickNumber % 100 !== 11
+							? 'st'
+							: pickNumber % 10 === 2 && pickNumber % 100 !== 12
+							? 'nd'
+							: pickNumber % 10 === 3 && pickNumber % 100 !== 13
+							? 'rd'
+							: 'th';
+
+					const selectMenu = new StringSelectMenuBuilder()
+						.setCustomId(`Pick ${pickNumber}`)
+						.setPlaceholder(`${pickNumber}${suffix} Pick`);
+
+					for (let j = 0; j < numGroups; j++) {
+						const label = String.fromCharCode(65 + j);
+						selectMenu.addOptions({ label, value: label });
+					}
+
+					const actionRow =
+						new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+					pickRows.push(actionRow);
+
+					if (pickRows.length % 5 === 0 || i === this.players.length + this.numberOfBans - 1) {
+						const isFirstGroup = pickMessages.length === 0;
+						pickMessages.push(
+							await this.channel.send({
+								content: isFirstGroup ? '__**Picks**__' : '',
+								components: pickRows,
+							})
+						);
+
+						pickRows.length = 0;
+					}
+				}
+
+				const submitButton = new ButtonBuilder()
+					.setCustomId('submit')
+					.setLabel('Submit')
+					.setStyle(ButtonStyle.Primary);
+
+				const teamButton = new ButtonBuilder()
+					.setCustomId('team_button')
+					.setLabel('Team')
+					.setStyle(ButtonStyle.Success);
+
+				const buttonRow =
+					new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton, teamButton);
+
+				pickMessages.push(
+					await this.channel.send({
+						content: `${this.getHammerTime(timer + 1000)}`,
+						components: [buttonRow],
+					})
+				);
+
+				const filter = (interaction: Interaction) =>
+					(interaction.isStringSelectMenu() && (interaction.customId.startsWith('Pick') || interaction.customId.startsWith('Ban'))) ||
+					(interaction.isButton() && interaction.customId === 'submit') ||
+					(interaction.isButton() && interaction.customId === 'team_button');
+
+				const collector = this.channel.createMessageComponentCollector({
+					filter,
+					time: timer + 1000,
+				});
+
+				collector.on('collect', async (interaction) => {
+					const userId = interaction.user.id;
+
+					const isPlayer = this.players.some(p => p.user.id === userId);
+					if (!isPlayer && interaction.isStringSelectMenu()) {
+						return interaction.reply({ content: 'You are not a participant!', ephemeral: true });
+					}
+
+					if (interaction.isStringSelectMenu()) {
+						const dropdownId = interaction.customId;
+						const selectedValue = interaction.values[0];
+
+						if (!selections.has(userId)) selections.set(userId, new Map());
+						selections.get(userId)!.set(dropdownId, selectedValue);
+
+						return interaction.deferUpdate();
+					}
+
+					if (interaction.isButton() && interaction.customId === 'submit') {
+						if (submittedUsers.has(userId)) {
+							return interaction.reply({ content: 'Already submitted!', ephemeral: true });
 						}
 
-						selections.set(userId, randomSelections);
+						submittedUsers.add(userId);
+						const userSelections = selections.get(userId) ?? new Map();
+
+						const formattedSelections = Array.from(userSelections.entries())
+							.map(([dropdownId, value]) => `${dropdownId}: ${value}`)
+							.join('\n');
+
+						await interaction.reply({
+							content: `Submission received:\n${formattedSelections}`,
+							ephemeral: true,
+						});
+
+						if (submittedUsers.size === this.players.length) collector.stop();
 					}
-				}
 
-				const assignGroups = await this.assignGroups(
-					this.players,
-					selections
-				);
-
-				for (const [userId, groupNumber] of Array.from(assignGroups)) {
-					const player = this.players.find(
-						(p) => p.user.id === userId
-					);
-
-					if (player) {
-						this.pickOption(player, tier, groupNumber, []).catch(
-							() => null
-						);
+					if (interaction.isButton() && interaction.customId === 'team_button') {
+						const player = this.players.find(p => p.user.id === userId);
+						await interaction.deferReply({ ephemeral: true });
+						const teamResponse = await this.sendTeam(player!);
+						await interaction.editReply(teamResponse);
 					}
-				}
+				});
 
+				collector.on('end', async () => {
+					for (const m of [...banMessages, ...pickMessages]) m.delete().catch(() => null);
+					clearTimeout(interval!);
+					interval = null;
+
+					for (const player of this.players) {
+						const userId = player.user.id;
+						if (!submittedUsers.has(userId)) {
+							const randomSelections = new Map<string, string>();
+							const availableOptions = new Set(
+								Array.from({ length: numGroups }, (_, i) => String.fromCharCode(65 + i))
+							);
+
+							for (let i = 0; i < this.players.length; i++) {
+								const optionsArray = Array.from(availableOptions);
+								const random = optionsArray[Math.floor(Math.random() * optionsArray.length)];
+								randomSelections.set(`Pick ${i + 1}`, random);
+								availableOptions.delete(random);
+							}
+
+							selections.set(userId, randomSelections);
+						}
+					}
+
+					const assignGroups = await this.assignGroups(this.players, selections);
+
+					for (const [userId, groupNumber] of Array.from(assignGroups)) {
+						const player = this.players.find(p => p.user.id === userId);
+						if (player) await this.pickOption(player, tier, groupNumber, []);
+					}
+
+					resolve();
+				});
+
+			} catch (err) {
+				console.error('Draft Error:', err);
 				resolve();
-			});
+			}
 		});
 	}
 
