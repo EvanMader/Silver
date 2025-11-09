@@ -41,3 +41,16 @@ export function parseJsonFile(filePath: string): any {
 		return [];
 	}
 }
+
+export async function safe<T>(promise: Promise<T>, label: string): Promise<T | null> {
+	try {
+		return await promise;
+	} catch (err) {
+		console.warn(`Safe async error in ${label}:`, err);
+		return null;
+	}
+}
+
+export function fileIfExists(buf: Buffer | null) {
+	return buf ? [{ attachment: buf }] : [];
+}

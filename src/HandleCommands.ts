@@ -2,6 +2,7 @@ import { Client, Events, Guild, GuildMemberRoleManager } from 'discord.js';
 import { Game } from './Game';
 import { Player } from './Player';
 import { Lobby } from './Lobby';
+import { safe } from './Silver';
 
 export function handleCommands(client: Client) {
 	client.on(Events.InteractionCreate, async (interaction) => {
@@ -9,45 +10,57 @@ export function handleCommands(client: Client) {
 			if (!interaction.inGuild()) return;
 			const guild: Guild = interaction.guild!;
 
+			// Handle button role toggling
 			if (interaction.isButton()) {
 				const role = guild.roles.cache.get(interaction.customId);
 				if (!role) return;
+
 				const roleManager: GuildMemberRoleManager = interaction.member
 					.roles as GuildMemberRoleManager;
-				const hasRole = roleManager.cache.has(role.id);
 
-				if (hasRole) {
-					await roleManager.remove(role);
-					await interaction.reply({
-						content: `The role ${role} has been deactivated.`,
-						ephemeral: true,
-					});
+				if (roleManager.cache.has(role.id)) {
+					await safe(roleManager.remove(role), `Remove role ${role.name}`);
+					await safe(
+						interaction.reply({
+							content: `The role ${role.name} has been deactivated.`,
+							ephemeral: true,
+						}),
+						'Replied to role removal'
+					);
 				} else {
-					await roleManager.add(role);
-					await interaction.reply({
-						content: `The role ${role} has been activated.`,
-						ephemeral: true,
-					});
+					await safe(roleManager.add(role), `Add role ${role.name}`);
+					await safe(
+						interaction.reply({
+							content: `The role ${role.name} has been activated.`,
+							ephemeral: true,
+						}),
+						'Replied to role addition'
+					);
 				}
 				return;
 			}
 
+			// Handle slash commands
 			if (interaction.isChatInputCommand()) {
-				if (interaction.channelId === '1320464242654314557') {
+				// Limit commands to a specific channel
+				if (interaction.channelId !== '1320464242654314557') return;
 
-					const player: Player = await Player.create(
-						interaction.user,
-						interaction.guild!
+				const player = await safe(
+					Player.create(interaction.user, guild),
+					'Create player'
+				);
+				if (!player) return;
+
+				if (interaction.commandName === 'create') {
+					await safe(
+						interaction.reply(`${interaction.user.displayName} created a lobby.`),
+						'Replied to create command'
 					);
-
-					if (interaction.commandName == 'create') {
-						await interaction.reply(
-							`${interaction.user.displayName} created a lobby.`
-						);
-						await Lobby.create( player, client, guild);
-					}
+					await safe(Lobby.create(player, client, guild), 'Create lobby');
 				}
 			}
-		} catch (e) { return; }
+		} catch (e) {
+			console.error('Error handling interaction:', e);
+		}
 	});
 }

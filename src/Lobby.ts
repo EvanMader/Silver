@@ -15,6 +15,7 @@ import {
 import { Game } from './Game';
 import { Player } from './Player';
 import { Deck, Tier, Pet } from './Deck';
+import { safe, fileIfExists } from './Silver';
 
 enum DraftType {
 	SnakeRotate,
@@ -67,7 +68,7 @@ export class Lobby extends Game {
 		client: Client,
 		guild: Guild
 	): Promise<Lobby> {
-		const channel = await guild.channels.create({
+		const channel = await safe(guild.channels.create({
 			parent: '1320478069236039814',
 			type: ChannelType.GuildText,
 			name: `${host.user.displayName}'s lobby`,
@@ -87,11 +88,14 @@ export class Lobby extends Game {
 					],
 				},
 			],
-		});
+		}), "Create Game Channel");
+
+		if (!channel) throw new Error("Lobby could not be created.");
 
 		let players: Player[] = [host];
 
 		const current: Lobby = new Lobby(players, client, guild, channel);
+
 		current.joinLeaveGame().catch(() => null);
 		current.lobbyOptions().catch(() => null);
 		await current.waitStart().catch(() => null);
@@ -101,177 +105,181 @@ export class Lobby extends Game {
 
 	private async startGame() {
 		try {
+			//
+			// Phase 1 — Cleanup + Setup
+			//
 			for (const message of this.lobbyMessages) {
-				message.delete().catch(() => null);
+				await safe(message.delete(), "Delete lobby message");
 			}
-			this.endGame().catch(() => null);
-			if (!this.allowTalking) this.removePlayersWrite().catch(() => null);
 
-			const packs = this.players.reduce((common, player) => {
-				return common.filter((num) => player.packs.includes(num));
-			}, this.players[0].packs);
+			await safe(this.endGame(), "End previous game cleanup");
+
+			if (!this.allowTalking) {
+				await safe(this.removePlayersWrite(), "Remove write permissions");
+			}
+
+			// Determine shared packs across players
+			const packs = this.players.reduce((common, player) =>
+				common.filter((num) => player.packs.includes(num)),
+				this.players[0].packs
+			);
 
 			this.deck = new Deck(true, packs);
 			this.packs = packs;
 
-			for (let i = 0; i < 6; i++) {
-				const tandgrisnerIndex = this.deck.tiers[i].pets.findIndex(
-					(p) => p.name === 'Tandgrisner'
-			);
-				const tandgnostIndex = this.deck.tiers[i].pets.findIndex(
-					(p) => p.name === 'Tandgnost'
-			);
-			
-			let tandgrisner = null;
-			let tandgnost = null;
-			
-			if (tandgrisnerIndex !== -1) {
-				[tandgrisner] = this.deck.tiers[i].pets.splice(tandgrisnerIndex, 1);
-			}
-			
-			if (tandgnostIndex !== -1) {
-				const adjustedIndex = tandgrisnerIndex !== -1 && tandgrisnerIndex < tandgnostIndex ? 
-				tandgnostIndex - 1 : tandgnostIndex;
-				[tandgnost] = this.deck.tiers[i].pets.splice(adjustedIndex, 1);
-			}
+			//
+			// Phase 2 — Distribute Pets & Foods Per Tier
+			//
+			for (let tier = 0; tier < 6; tier++) {
+				const { pets, foods } = this.deck.tiers[tier];
 
-			if (tandgrisner && tandgnost) {
-				this.deck.tiers[i].pets.push(tandgnost);
-			}
+				const tandgrisnerIndex = pets.findIndex((p) => p.name === "Tandgrisner");
+				const tandgnostIndex = pets.findIndex((p) => p.name === "Tandgnost");
 
-			let tandgnostUsed = false;
+				let tandgrisner: any = null;
+				let tandgnost: any = null;
 
-			for (let j = 0; j < 10 - this.numberOfPetsDraft; j++) {
-				let index = Math.floor(Math.random() * this.deck.tiers[i].pets.length);
-				let pet = this.deck.tiers[i].pets[index];
+				// Pull them out of the pool if present
+				if (tandgrisnerIndex !== -1) {
+					[tandgrisner] = pets.splice(tandgrisnerIndex, 1);
+				}
 
-				if (pet.name === 'Tandgnost') {
-					if (j >= 10 - this.numberOfPetsDraft - 1 && tandgrisner) {
-						j--;
+				if (tandgnostIndex !== -1) {
+					const adjusted = tandgrisnerIndex !== -1 && tandgrisnerIndex < tandgnostIndex
+						? tandgnostIndex - 1
+						: tandgnostIndex;
+					[tandgnost] = pets.splice(adjusted, 1);
+				}
+
+				if (tandgrisner && tandgnost) {
+					pets.push(tandgnost);
+				}
+
+				let tandgnostUsed = false;
+
+				// Distribute pets
+				for (let j = 0; j < 10 - this.numberOfPetsDraft; j++) {
+					const index = Math.floor(Math.random() * pets.length);
+					const pet = pets[index];
+
+					// Special tandem rule
+					if (pet.name === "Tandgnost") {
+						if (j >= (10 - this.numberOfPetsDraft - 1) && tandgrisner) {
+							j--;
+							continue;
+						}
+
+						tandgnostUsed = true;
+
+						for (const player of this.players) {
+							player.deck.tiers[tier].pets.push(pet);
+							if (tandgrisner) player.deck.tiers[tier].pets.push(tandgrisner);
+						}
+
+						pets.splice(index, 1);
+						if (tandgrisner) j++;
 						continue;
 					}
-					tandgnostUsed = true;
+
 					for (const player of this.players) {
-						player.deck.tiers[i].pets.push(pet);
-						if (tandgrisner) {
-							player.deck.tiers[i].pets.push(tandgrisner);
-						}
+						player.deck.tiers[tier].pets.push(pet);
 					}
-					this.deck.tiers[i].pets.splice(index, 1);
-					if (tandgrisner) {
-						j++;
+					pets.splice(index, 1);
+				}
+
+				if (!tandgnostUsed && tandgrisner && !tandgnost) {
+					pets.push(tandgrisner);
+				}
+
+				// Distribute foods
+				for (let j = 0; j < 3 - this.numberOfFoodsDraft; j++) {
+					let index = Math.floor(Math.random() * foods.length);
+
+					// Force chocolate consistency in tier 5
+					if (tier === 4 && foods.some((f) => f.name === "Chocolate")) {
+						index = foods.findIndex((f) => f.name === "Chocolate");
 					}
-					} else {
+
+					const food = foods[index];
 					for (const player of this.players) {
-						player.deck.tiers[i].pets.push(pet);
+						player.deck.tiers[tier].foods.push(food);
 					}
-					this.deck.tiers[i].pets.splice(index, 1);
+
+					foods.splice(index, 1);
 				}
 			}
 
-			if (!tandgnostUsed) {
-				if (tandgrisner && !tandgnost) {
-					this.deck.tiers[i].pets.push(tandgrisner);
-				}
-			}
+			//
+			// Phase 3 — Announce Draft & Allow Viewing
+			//
+			const teamImage = await safe(
+				this.getTeam(this.players[0].deck.tiers),
+				"Get team image"
+			);
 
-			for (let j = 0; j < 3 - this.numberOfFoodsDraft; j++) {
-				let index = Math.floor(Math.random() * this.deck.tiers[i].foods.length);
-				
-				if (
-				i === 4 &&
-				this.deck.tiers[i].foods.findIndex((food) => food.name === 'Chocolate') != -1
-				) {
-				index = this.deck.tiers[i].foods.findIndex(
-					(food) => food.name === 'Chocolate'
-				);
-				}
-				
-				for (const player of this.players) {
-				player.deck.tiers[i].foods.push(this.deck.tiers[i].foods[index]);
-				}
-				this.deck.tiers[i].foods.splice(index, 1);
-			}
-			}
-			await this.channel.send({
-				content: `__**Randomly Selected ${
-					10 - this.numberOfPetsDraft
-				} Pets and ${
-					3 - this.numberOfFoodsDraft
-				} Food Per Tier**__ \nDraft begins in ${
-					this.timeToLook / 1000
-				} seconds.`,
-				files: [
-					{
-						attachment: await this.getTeam(
-							this.players[0].deck.tiers
-						),
-					},
-				],
-			});
+			await safe(
+				this.channel.send({
+					content: `__**Randomly Selected ${
+						10 - this.numberOfPetsDraft
+					} Pets and ${
+						3 - this.numberOfFoodsDraft
+					} Food Per Tier**__\nDraft begins in ${
+						this.timeToLook / 1000
+					} seconds.`,
+					files: teamImage ? [{ attachment: teamImage }] : []
+				}),
+				"Send draft start message"
+			);
 
-			let order: number[] = [0, 1, 2, 3, 4, 5];
+			let order = [0, 1, 2, 3, 4, 5];
 			if (this.randomizeTiers) {
 				for (let i = order.length - 1; i > 0; i--) {
-					const randomIndex = Math.floor(Math.random() * (i + 1));
-					[order[i], order[randomIndex]] = [
-						order[randomIndex],
-						order[i],
-					];
+					const j = Math.floor(Math.random() * (i + 1));
+					[order[i], order[j]] = [order[j], order[i]];
 				}
 			}
 
 			this.players = this.players.sort(() => Math.random() - 0.5);
-
 			this.constructGroups();
 
-			await new Promise((resolve) =>
-				setTimeout(resolve, this.timeToLook)
-			);
+			await new Promise((resolve) => setTimeout(resolve, this.timeToLook));
 
+			//
+			// Phase 4 — Draft Loop
+			//
 			for (let i = 0; i < 6; i++) {
-				let selected: number[] = [];
-				let timer: number =
-					this.timerPerGroup * (this.players.length + 2) +
-					this.timerBase;
-				if (this.bidding) {
-					timer += this.timerPerGroup * this.numberOfBans;
-				}
-				await this.channel.send(`__# TIER ${order[i] + 1}__`);
+				await safe(this.channel.send(`__# TIER ${order[i] + 1}__`), "Announce tier");
+
+				const totalGroups = this.players.length + 2;
+				let timer = this.timerPerGroup * totalGroups + this.timerBase;
+
+				if (this.bidding) timer += this.timerPerGroup * this.numberOfBans;
+
+				const selected: number[] = [];
 
 				if (!this.bidding) {
-					for (let j = 0; j < this.numberOfBans; j++) {
-						await this.selectGroup(
-							this.players[this.getTurn()],
-							order[i],
-							timer,
-							false,
-							selected
-						).catch(() => null);
+					// Bans
+					for (let b = 0; b < this.numberOfBans; b++) {
+						await safe(this.selectGroup(this.players[this.getTurn()], order[i], timer, false, selected), "Ban select");
 						this.turn++;
 						timer -= this.timerPerGroup;
 					}
 
-					for (let j = 0; j < this.players.length; j++) {
-						await this.selectGroup(
-							this.players[this.getTurn()],
-							order[i],
-							timer,
-							true,
-							selected
-						).catch(() => null);
+					// Picks
+					for (let p = 0; p < this.players.length; p++) {
+						await safe(this.selectGroup(this.players[this.getTurn()], order[i], timer, true, selected), "Pick select");
 						this.turn++;
 						timer -= this.timerPerGroup;
 					}
 				} else {
-					await this.biddingDraft(order[i], timer).catch(() => null);
+					await safe(this.biddingDraft(order[i], timer), "Bidding draft");
 				}
 
+				// Rotate draft order
 				switch (this.draft) {
 					case DraftType.SnakeRotate:
 						this.players = this.players.reverse();
-						if (i % 2 == 1)
-							this.players.unshift(this.players.pop()!);
+						if (i % 2 === 1) this.players.unshift(this.players.pop()!);
 						break;
 
 					case DraftType.Snake:
@@ -283,57 +291,55 @@ export class Lobby extends Game {
 						break;
 
 					case DraftType.RotateCoprime:
-						const gcd = (a: number, b: number): number =>
-							b === 0 ? a : gcd(b, a % b);
-
-						const numPlayers = this.players.length;
-						let coprime = 1;
-						for (let x = 2; x < numPlayers; x++) {
-							if (gcd(x, numPlayers) === 1) {
-								coprime = x;
-								break;
-							}
+						const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
+						const n = this.players.length;
+						let step = 1;
+						for (let x = 2; x < n; x++) {
+							if (gcd(x, n) === 1) { step = x; break; }
 						}
-
-						this.players = [
-							...this.players.slice(-coprime),
-							...this.players.slice(0, -coprime),
-						];
+						this.players = [...this.players.slice(-step), ...this.players.slice(0, -step)];
 						break;
 
 					case DraftType.Random:
-						for (let i = this.players.length - 1; i > 0; i--) {
-							const j = Math.floor(Math.random() * (i + 1));
-							[this.players[i], this.players[j]] = [
-								this.players[j],
-								this.players[i],
-							];
-						}
-						break;
-
-					default:
+						this.players = this.players.sort(() => Math.random() - 0.5);
 						break;
 				}
 			}
 
+			//
+			// Phase 5 — Send Codes & Cleanup
+			//
 			for (const player of this.players) {
-				await this.channel.send({
-					content: `<@${player.user.id}> Pack Code:`,
-					files: [
-						{
-							attachment: await this.getTeam(player.deck.tiers),
-						},
-					],
-				});
-				await this.channel.send(`${player.deck.getCode()}`);
+				const playerImage = await safe(
+					this.getTeam(player.deck.tiers),
+					"Get player team image"
+				);
+
+				await safe(
+					this.channel.send({
+						content: `<@${player.user.id}> Pack Code:`,
+						files: playerImage ? [{ attachment: playerImage }] : []
+					}),
+					"Send player pack image"
+				);
+
+				await safe(
+					this.channel.send(player.deck.getCode()),
+					"Send deck code string"
+				);
 			}
 
-			if (!this.allowTalking) this.addPlayersWrite().catch(() => null);
-			await this.endGame();
-		} catch (e) {
+			if (!this.allowTalking) {
+				await safe(this.addPlayersWrite(), "Restore write permissions");
+			}
+
+			await safe(this.endGame(), "Finalize game");
+
+		} catch {
 			return;
 		}
 	}
+
 
 	protected async selectGroup(
 		player: Player,
@@ -345,644 +351,424 @@ export class Lobby extends Game {
 		try {
 			let remainingTime = timerLength;
 
-			const countdown = await this.channel.send({
-				content: `<@${player.user.id}> Select one tier ${tier + 1} group to **${pick ? 'pick' : 'ban'}**! You have ${Math.floor(
-					remainingTime / 1000
-				)} seconds remaining.`,
-				files: [
-					{
-						attachment: await this.getGroups(
-							this.deck.groups[tier],
-							selected
-						),
-					},
-				],
-			});
+			const groupsImage = await safe(
+				this.getGroups(this.deck.groups[tier], selected),
+				"Get Groups Image"
+			);
+
+			const countdown = await safe(
+				this.channel.send({
+					content: `<@${player.user.id}> Select one tier ${
+						tier + 1
+					} group to **${pick ? "pick" : "ban"}**! You have ${
+						Math.floor(remainingTime / 1000)
+					} seconds remaining.`,
+					files: fileIfExists(groupsImage),
+				}),
+				"Send Countdown Message"
+			);
+
+			if (!countdown) throw new Error("Countdown Message failed to send.");
 
 			let interval: NodeJS.Timeout | null = null;
 
 			const updateCountdown = async () => {
-				if (remainingTime > 0 && interval !== null) {
-					remainingTime -= remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
-					const nextTimeout = remainingTime >= 5000 ? 5000 : remainingTime;
+				if (remainingTime > 0 && interval !== null && countdown) {
+					remainingTime -=
+						remainingTime % 5000 === 0
+							? 5000
+							: remainingTime % 5000;
 
-					await countdown.edit({
-						content: `<@${player.user.id}> Select one tier ${tier + 1} group to **${pick ? 'pick' : 'ban'}**! You have ${Math.floor(
-							remainingTime / 1000
-						)} seconds remaining.`,
-					});
+					await safe(
+						countdown.edit({
+							content: `<@${player.user.id}> Select one tier ${
+								tier + 1
+							} group to **${pick ? "pick" : "ban"}**! You have ${
+								Math.floor(remainingTime / 1000)
+							} seconds remaining.`,
+						}),
+						"Update Countdown"
+					);
 
-					interval = setTimeout(updateCountdown, nextTimeout);
+					interval = setTimeout(
+						updateCountdown,
+						remainingTime >= 5000 ? 5000 : remainingTime
+					);
 				} else {
 					interval = null;
 				}
 			};
 
-			const firstTimeout = remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+			const firstTimeout =
+				remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
 			interval = setTimeout(updateCountdown, firstTimeout);
 
 			const selectMenu = new StringSelectMenuBuilder()
-				.setCustomId('group_select')
-				.setPlaceholder('Select a group...')
+				.setCustomId("group_select")
+				.setPlaceholder("Select a group...")
 				.addOptions(
 					this.deck.groups[tier]
-						.map((group, index) => ({
-							label: String.fromCharCode(65 + index),
-							value: `${index}`,
+						.map((_, idx) => ({
+							label: String.fromCharCode(65 + idx),
+							value: `${idx}`,
 						}))
 						.filter(o => !selected.includes(Number(o.value)))
 				);
 
-			const submitButton = new ButtonBuilder().setCustomId('submit').setLabel('Submit').setStyle(ButtonStyle.Primary);
-			const teamButton = new ButtonBuilder().setCustomId('team_button').setLabel('Team').setStyle(ButtonStyle.Success);
+			const submitButton = new ButtonBuilder()
+				.setCustomId("submit")
+				.setLabel("Submit")
+				.setStyle(ButtonStyle.Primary);
 
-			const actionMessage = await this.channel.send({
-				content: `**${pick ? 'Pick' : 'Ban'}** ${this.getHammerTime(timerLength + 1000)}:`,
-				components: [
-					new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu),
-					new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton, teamButton),
-				],
-			});
+			const teamButton = new ButtonBuilder()
+				.setCustomId("team_button")
+				.setLabel("Team")
+				.setStyle(ButtonStyle.Success);
 
-			await new Promise<void>((resolve, reject) => {
+			const actionMessage = await safe(
+				this.channel.send({
+					content: `**${pick ? "Pick" : "Ban"}** ${this.getHammerTime(
+						timerLength + 1000
+					)}`,
+					components: [
+						new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu),
+						new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton, teamButton),
+					],
+				}),
+				"Send Action Message"
+			);
+
+			if (!actionMessage) throw new Error("ActionMessage failed to send.");
+
+			await new Promise<void>(resolve => {
 				let selectedValue: string | null = null;
 
-				const collector = actionMessage.createMessageComponentCollector({
+				const collector = actionMessage?.createMessageComponentCollector({
 					time: timerLength + 1000,
 				});
 
-				collector.on('collect', async interaction => {
-					try {
-						if (interaction.customId === 'team_button') {
-							await interaction.deferReply({ ephemeral: true });
-							const teamResponse = await this.sendTeam(player);
-							await interaction.editReply(teamResponse);
+				collector?.on("collect", async interaction => {
+					if (interaction.customId === "team_button") {
+						await safe(interaction.deferReply({ ephemeral: true }), "Defer Team Reply");
+						const teamResponse = await safe(this.sendTeam(player), "Send Team Data");
+						await safe(interaction.editReply(teamResponse ?? ""), "Edit Team Reply");
+						return;
+					}
+
+					if (interaction.user.id !== player.user.id) {
+						await safe(
+							interaction.reply({
+								content: "This is not your selection menu!",
+								ephemeral: true,
+							}),
+							"Wrong User Interaction Reply"
+						);
+						return;
+					}
+
+					if (interaction.isStringSelectMenu()) {
+						selectedValue = interaction.values[0];
+						await safe(interaction.deferUpdate(), "Defer Group Select");
+						return;
+					}
+
+					if (interaction.customId === "submit") {
+						if (!selectedValue) {
+							await safe(
+								interaction.reply({
+									content: "Please select a group before submitting.",
+									ephemeral: true,
+								}),
+								"Submit Without Selection"
+							);
 							return;
 						}
-
-						if (interaction.user.id !== player.user.id) {
-							return interaction.reply({
-								content: 'This is not your selection menu!',
-								ephemeral: true,
-							});
-						}
-
-						if (interaction.isStringSelectMenu() && interaction.customId === 'group_select') {
-							selectedValue = interaction.values[0];
-							return interaction.deferUpdate();
-						}
-
-						if (interaction.customId === 'submit') {
-							if (!selectedValue) {
-								return interaction.reply({
-									content: 'Please select a group before submitting.',
-									ephemeral: true,
-								});
-							}
-							if (!collector.ended) collector.stop('Success');
-						}
-					} catch (err) {
-						console.error('Interaction error:', err);
+						collector.stop("confirmed");
 					}
 				});
 
-				collector.on('end', async (_collected, reason) => {
+				collector?.on("end", async (_, reason) => {
 					clearTimeout(interval!);
 					interval = null;
-					await actionMessage.delete().catch(() => null);
 
-					if (reason === 'time') {
-						if (pick) await this.pickOption(player, tier, -1, selected);
-						await this.channel.send('You took too long to respond!');
-						return resolve();
-					}
+					await safe(actionMessage?.delete(), "Delete Action Message");
+					await safe(countdown?.delete(), "Delete Countdown Message");
 
-					if (reason === 'Success') {
+					if (reason === "confirmed" && selectedValue !== null) {
 						if (pick) {
-							await this.pickOption(player, tier, parseInt(selectedValue!), selected);
+							await safe(this.pickOption(player, tier, parseInt(selectedValue), selected), "Pick Option");
 						} else {
-							await this.banOption(tier, parseInt(selectedValue!), selected);
+							await safe(this.banOption(tier, parseInt(selectedValue), selected), "Ban Option");
 						}
 						return resolve();
 					}
 
-					console.log('Selection ended for reason:', reason);
-					reject();
+					// Timeout fallback
+					await safe(
+						this.channel.send(`<@${player.user.id}> You took too long.`),
+						"Timeout Warning"
+					);
+					if (pick) {
+						await safe(this.pickOption(player, tier, -1, selected), "Default Pick on Timeout");
+					}
+					resolve();
 				});
 			});
 		} catch (err) {
-			console.error('selectGroup failed:', err);
-			await this.channel.send(`<@${player.user.id}> An error occurred. Defaulting selection.`);
-			if (pick) await this.pickOption(player, tier, -1, selected);
+			console.error("selectGroup failed:", err);
+			await safe(this.channel.send(`<@${player.user.id}> Error occurred. Defaulting.`), "Send SelectGroup Error Notice");
+			await safe(this.pickOption(player, tier, -1, selected), "Default Pick On Failure");
 		}
 	}
 
 	private async lobbyOptions() {
-		const createDropdown = (
-			customId: string,
-			placeholder: string,
-			options: { label: string; value: string }[]
-		) => {
-			const selectMenu = new StringSelectMenuBuilder()
+		try {
+			const createDropdown = (
+				customId: string,
+				placeholder: string,
+				options: { label: string; value: string }[]
+			) => new StringSelectMenuBuilder()
 				.setCustomId(customId)
 				.setPlaceholder(placeholder)
 				.addOptions(options);
 
-			return selectMenu;
-		};
+			// Dropdown options
+			const numberOfPetsDraftOptions = Array.from({ length: 11 }, (_, i) => ({ label: `${i}`, value: `${i}` }));
+			const numberOfFoodsDraftOptions = Array.from({ length: 4 }, (_, i) => ({ label: `${i}`, value: `${i}` }));
+			const timerPerGroupOptions = Array.from({ length: 21 }, (_, i) => ({ label: `${i}`, value: `${i}` }));
+			const timerBaseOptions = Array.from({ length: 19 }, (_, i) => ({ label: `${i * 5}`, value: `${i * 5}` }));
+			const timeToLookOptions = Array.from({ length: 25 }, (_, i) => ({ label: `${i * 5}`, value: `${i * 5}` }));
+			const randomizeTiersOptions = [{ label: 'True', value: 'true' }, { label: 'False', value: 'false' }];
+			const allowTalkingOptions = [{ label: 'True', value: 'true' }, { label: 'False', value: 'false' }];
+			const draftTypeOptions = Object.values(DraftType).filter(v => typeof v === 'string').map(label => ({ label, value: label }));
+			const repeatPetOptions = [{ label: 'True', value: 'true' }, { label: 'False', value: 'false' }];
+			const numberOfBansOptions = Array.from({ length: 6 }, (_, i) => ({ label: `${i}`, value: `${i}` }));
+			const biddingOptions = [{ label: 'True', value: 'true' }, { label: 'False', value: 'false' }];
 
-		const numberOfPetsDraftOptions = Array.from({ length: 11 }, (_, i) => ({
-			label: `${i}`,
-			value: `${i}`,
-		}));
-
-		const numberOfPetsDraftDropdown = createDropdown(
-			'number_of_draft',
-			`Number of pets to draft: ${this.numberOfPetsDraft}`,
-			numberOfPetsDraftOptions
-		);
-
-		const numberOfFoodsDraftOptions = Array.from({ length: 4 }, (_, i) => ({
-			label: `${i}`,
-			value: `${i}`,
-		}));
-
-		const numberOfFoodsDraftDropdown = createDropdown(
-			'number_of_food',
-			`Number of food to draft: ${this.numberOfFoodsDraft}`,
-			numberOfFoodsDraftOptions
-		);
-
-		const timerPerGroupOptions = Array.from({ length: 21 }, (_, i) => ({
-			label: `${i}`,
-			value: `${i}`,
-		}));
-
-		const timerPerGroupDropdown = createDropdown(
-			'timer_per_group',
-			`Timer increment per group (seconds): ${this.timerPerGroup / 1000}`,
-			timerPerGroupOptions
-		);
-
-		const timerBaseOptions = Array.from({ length: 19 }, (_, i) => ({
-			label: `${i * 5}`,
-			value: `${i * 5}`,
-		}));
-
-		const timerBaseDropdown = createDropdown(
-			'timer_base',
-			`Base timer length (seconds): ${this.timerBase / 1000}`,
-			timerBaseOptions
-		);
-
-		const timeToLookOptions = Array.from({ length: 25 }, (_, i) => ({
-			label: `${i * 5}`,
-			value: `${i * 5}`,
-		}));
-
-		const timeToLookDropdown = createDropdown(
-			'time_to_look',
-			`Time to look before draft (seconds): ${this.timeToLook / 1000}`,
-			timeToLookOptions
-		);
-
-		const randomizeTiersOptions = [
-			{ label: 'True', value: 'true' },
-			{ label: 'False', value: 'false' },
-		];
-
-		const randomizeTiersDropdown = createDropdown(
-			'randomize_tiers',
-			`Randomize tiers: ${this.randomizeTiers}`,
-			randomizeTiersOptions
-		);
-
-		const allowTalkingOptions = [
-			{ label: 'True', value: 'true' },
-			{ label: 'False', value: 'false' },
-		];
-
-		const allowTalkingDropdown = createDropdown(
-			'allow_talking',
-			`Allow talking: ${this.allowTalking}`,
-			allowTalkingOptions
-		);
-
-		const draftTypeOptions = Object.values(DraftType)
-			.filter((value) => typeof value === 'string')
-			.map((label) => ({
-				label,
-				value: label,
-			}));
-
-		const draftTypeDropdown = createDropdown(
-			'draft_type',
-			`Draft Type: ${DraftType[this.draft]}`,
-			draftTypeOptions
-		);
-
-		const repeatPetOptions = [
-			{ label: 'True', value: 'true' },
-			{ label: 'False', value: 'false' },
-		];
-
-		const repeatPetsDropdown = createDropdown(
-			'repeat_pets',
-			`Repeat Pets: ${this.repeatPets}`,
-			repeatPetOptions
-		);
-
-		const numberOfBansOptions = Array.from({ length: 6 }, (_, i) => ({
-			label: `${i}`,
-			value: `${i}`,
-		}));
-
-		const numberOfBansDropdown = createDropdown(
-			'number_of_bans',
-			`Number of bans: ${this.numberOfBans}`,
-			numberOfBansOptions
-		);
-
-		const biddingOptions = [
-			{ label: 'True', value: 'true' },
-			{ label: 'False', value: 'false' },
-		];
-
-		const biddingDropdown = createDropdown(
-			'bidding',
-			`Bidding: ${this.bidding}`,
-			biddingOptions
-		);
-
-		let numberOfPetsDraftRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				numberOfPetsDraftDropdown
+			// Initial rows
+			let numberOfPetsDraftRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('number_of_draft', `Number of pets to draft: ${this.numberOfPetsDraft}`, numberOfPetsDraftOptions)
 			);
-		let numberOfFoodsDraftRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				numberOfFoodsDraftDropdown
+			let numberOfFoodsDraftRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('number_of_food', `Number of food to draft: ${this.numberOfFoodsDraft}`, numberOfFoodsDraftOptions)
 			);
-		let timerPerGroupRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				timerPerGroupDropdown
+			let timerPerGroupRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('timer_per_group', `Timer increment per group (seconds): ${this.timerPerGroup / 1000}`, timerPerGroupOptions)
 			);
-		let timerBaseRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				timerBaseDropdown
+			let timerBaseRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('timer_base', `Base timer length (seconds): ${this.timerBase / 1000}`, timerBaseOptions)
 			);
-		let timeToLookRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				timeToLookDropdown
+			let timeToLookRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('time_to_look', `Time to look before draft (seconds): ${this.timeToLook / 1000}`, timeToLookOptions)
 			);
-		let randomizeTiersRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				randomizeTiersDropdown
+			let randomizeTiersRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('randomize_tiers', `Randomize tiers: ${this.randomizeTiers}`, randomizeTiersOptions)
 			);
-		let allowTalkingRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				allowTalkingDropdown
+			let allowTalkingRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('allow_talking', `Allow talking: ${this.allowTalking}`, allowTalkingOptions)
 			);
-		let draftTypeRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				draftTypeDropdown
+			let draftTypeRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('draft_type', `Draft Type: ${DraftType[this.draft]}`, draftTypeOptions)
 			);
-		let repeatPetsRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				repeatPetsDropdown
+			let repeatPetsRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('repeat_pets', `Repeat Pets: ${this.repeatPets}`, repeatPetOptions)
 			);
-		let numberOfBansRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				numberOfBansDropdown
+			let numberOfBansRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('number_of_bans', `Number of bans: ${this.numberOfBans}`, numberOfBansOptions)
 			);
-		let biddingRow =
-			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-				biddingDropdown
+			let biddingRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+				createDropdown('bidding', `Bidding: ${this.bidding}`, biddingOptions)
 			);
 
-		const settingsMessage1 = await this.channel.send({
-			components: [
-				numberOfPetsDraftRow,
-				numberOfFoodsDraftRow,
-				timerPerGroupRow,
-				timerBaseRow,
-				timeToLookRow,
-			],
-		});
-		const settingsMessage2 = await this.channel.send({
-			components: [
-				randomizeTiersRow,
-				allowTalkingRow,
-				draftTypeRow,
-				repeatPetsRow,
-				numberOfBansRow,
-			],
-		});
-		const settingsMessage3 = await this.channel.send({
-			components: [biddingRow],
-		});
-		this.lobbyMessages.push(settingsMessage1);
-		this.lobbyMessages.push(settingsMessage2);
-		this.lobbyMessages.push(settingsMessage3);
+			// Send messages
+			const settingsMessage1 = await safe(this.channel.send({
+				components: [numberOfPetsDraftRow, numberOfFoodsDraftRow, timerPerGroupRow, timerBaseRow, timeToLookRow]
+			}), "Send lobby settings message 1");
 
-		const collector1 = settingsMessage1.createMessageComponentCollector();
-		const collector2 = settingsMessage2.createMessageComponentCollector();
-		const collector3 = settingsMessage3.createMessageComponentCollector();
+			const settingsMessage2 = await safe(this.channel.send({
+				components: [randomizeTiersRow, allowTalkingRow, draftTypeRow, repeatPetsRow, numberOfBansRow]
+			}), "Send lobby settings message 2");
 
-		collector1.on(
-			'collect',
-			async (interaction: MessageComponentInteraction) => {
-				if (!interaction.isStringSelectMenu()) return;
-				if (interaction.user != this.host.user) {
-					interaction.reply({
-						content:
-							"You don't have permission to change the game settings.",
-						ephemeral: true,
-					});
-					return;
-				}
-				await interaction.deferUpdate();
+			const settingsMessage3 = await safe(this.channel.send({
+				components: [biddingRow]
+			}), "Send lobby settings message 3");
 
-				switch (interaction.customId) {
-					case 'number_of_draft':
-						this.numberOfPetsDraft = parseInt(
-							interaction.values[0],
-							10
-						);
-						numberOfPetsDraftRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'number_of_draft',
-									`Number of pets to Draft: ${this.numberOfPetsDraft}`,
-									numberOfPetsDraftOptions
-								)
+			if (!settingsMessage1 || !settingsMessage2 || !settingsMessage3) throw new Error("Settings Message faild to send.");
+
+			this.lobbyMessages.push(settingsMessage1, settingsMessage2, settingsMessage3);
+
+			const collectors = [
+				settingsMessage1.createMessageComponentCollector(),
+				settingsMessage2.createMessageComponentCollector(),
+				settingsMessage3.createMessageComponentCollector()
+			];
+
+			// Collector handler
+			collectors.forEach((collector, index) => {
+				collector.on('collect', async (interaction: MessageComponentInteraction) => {
+					if (!interaction.isStringSelectMenu()) return;
+					if (interaction.user.id !== this.host.user.id) {
+						await safe(interaction.reply({ content: "You don't have permission to change the game settings.", ephemeral: true }), "Unauthorized lobby interaction reply");
+						return;
+					}
+					await safe(interaction.deferUpdate(), "Defer lobby interaction");
+
+					const value = interaction.values[0];
+
+					switch (interaction.customId) {
+						case 'number_of_draft':
+							this.numberOfPetsDraft = parseInt(value, 10);
+							numberOfPetsDraftRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('number_of_draft', `Number of pets to draft: ${this.numberOfPetsDraft}`, numberOfPetsDraftOptions)
 							);
-						break;
+							break;
 
-					case 'number_of_food':
-						this.numberOfFoodsDraft = parseInt(
-							interaction.values[0],
-							10
-						);
-						numberOfFoodsDraftRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'number_of_food',
-									`Number of food to draft: ${this.numberOfFoodsDraft}`,
-									numberOfFoodsDraftOptions
-								)
+						case 'number_of_food':
+							this.numberOfFoodsDraft = parseInt(value, 10);
+							numberOfFoodsDraftRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('number_of_food', `Number of food to draft: ${this.numberOfFoodsDraft}`, numberOfFoodsDraftOptions)
 							);
-						break;
+							break;
 
-					case 'timer_per_group':
-						this.timerPerGroup =
-							parseInt(interaction.values[0], 10) * 1000;
-						timerPerGroupRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'timer_per_group',
-									`Timer increment per group (seconds): ${
-										this.timerPerGroup / 1000
-									}`,
-									timerPerGroupOptions
-								)
+						case 'timer_per_group':
+							this.timerPerGroup = parseInt(value, 10) * 1000;
+							timerPerGroupRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('timer_per_group', `Timer increment per group (seconds): ${this.timerPerGroup / 1000}`, timerPerGroupOptions)
 							);
-						break;
+							break;
 
-					case 'timer_base':
-						this.timerBase =
-							parseInt(interaction.values[0], 10) * 1000;
-						timerBaseRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'timer_base',
-									`Base timer length (seconds): ${
-										this.timerBase / 1000
-									}`,
-									timerBaseOptions
-								)
+						case 'timer_base':
+							this.timerBase = parseInt(value, 10) * 1000;
+							timerBaseRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('timer_base', `Base timer length (seconds): ${this.timerBase / 1000}`, timerBaseOptions)
 							);
-						break;
+							break;
 
-					case 'time_to_look':
-						this.timeToLook =
-							parseInt(interaction.values[0], 10) * 1000;
-						timeToLookRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'time_to_look',
-									`Time to look before draft (seconds): ${
-										this.timeToLook / 1000
-									}`,
-									timeToLookOptions
-								)
+						case 'time_to_look':
+							this.timeToLook = parseInt(value, 10) * 1000;
+							timeToLookRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('time_to_look', `Time to look before draft (seconds): ${this.timeToLook / 1000}`, timeToLookOptions)
 							);
-						break;
-				}
+							break;
 
-				const updatedRows = [
-					numberOfPetsDraftRow,
-					numberOfFoodsDraftRow,
-					timerPerGroupRow,
-					timerBaseRow,
-					timeToLookRow,
-				];
-				await interaction.message
-					.edit({
-						components: updatedRows,
-					})
-					.catch(() => null);
-			}
-		);
-
-		collector2.on(
-			'collect',
-			async (interaction: MessageComponentInteraction) => {
-				if (!interaction.isStringSelectMenu()) return;
-				if (interaction.user != this.host.user) {
-					interaction.reply({
-						content:
-							"You don't have permission to change the game settings.",
-						ephemeral: true,
-					});
-					return;
-				}
-				await interaction.deferUpdate();
-
-				switch (interaction.customId) {
-					case 'randomize_tiers':
-						this.randomizeTiers = interaction.values[0] === 'true';
-						randomizeTiersRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'randomize_tiers',
-									`Randomize tiers: ${this.randomizeTiers}`,
-									randomizeTiersOptions
-								)
+						case 'randomize_tiers':
+							this.randomizeTiers = value === 'true';
+							randomizeTiersRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('randomize_tiers', `Randomize tiers: ${this.randomizeTiers}`, randomizeTiersOptions)
 							);
-						break;
+							break;
 
-					case 'allow_talking':
-						this.allowTalking = interaction.values[0] === 'true';
-						allowTalkingRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'allow_talking',
-									`Allow talking: ${this.allowTalking}`,
-									allowTalkingOptions
-								)
+						case 'allow_talking':
+							this.allowTalking = value === 'true';
+							allowTalkingRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('allow_talking', `Allow talking: ${this.allowTalking}`, allowTalkingOptions)
 							);
-						break;
+							break;
 
-					case 'draft_type':
-						this.draft =
-							interaction.values[0] === 'SnakeRotate'
-								? DraftType.SnakeRotate
-								: interaction.values[0] === 'Snake'
-								? DraftType.Snake
-								: interaction.values[0] === 'Rotate'
-								? DraftType.Rotate
-								: interaction.values[0] === 'RotateCoprime'
-								? DraftType.RotateCoprime
-								: interaction.values[0] === 'Random'
-								? DraftType.Random
-								: DraftType.SnakeRotate;
-
-						draftTypeRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'draft_type',
-									`Draft Type: ${DraftType[this.draft]}`,
-									draftTypeOptions
-								)
+						case 'draft_type':
+							this.draft = DraftType[value as keyof typeof DraftType] ?? DraftType.SnakeRotate;
+							draftTypeRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('draft_type', `Draft Type: ${DraftType[this.draft]}`, draftTypeOptions)
 							);
-						break;
+							break;
 
-					case 'repeat_pets':
-						this.repeatPets = interaction.values[0] === 'true';
-
-						repeatPetsRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'repeat_pets',
-									`Repeat Pets: ${this.repeatPets}`,
-									repeatPetOptions
-								)
+						case 'repeat_pets':
+							this.repeatPets = value === 'true';
+							repeatPetsRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('repeat_pets', `Repeat Pets: ${this.repeatPets}`, repeatPetOptions)
 							);
-						break;
+							break;
 
-					case 'number_of_bans':
-						this.numberOfBans = parseInt(interaction.values[0], 10);
-
-						numberOfBansRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'number_of_bans',
-									`Number of bans: ${this.numberOfBans}`,
-									numberOfBansOptions
-								)
+						case 'number_of_bans':
+							this.numberOfBans = parseInt(value, 10);
+							numberOfBansRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('number_of_bans', `Number of bans: ${this.numberOfBans}`, numberOfBansOptions)
 							);
-						break;
-				}
+							break;
 
-				const updatedRows = [
-					randomizeTiersRow,
-					allowTalkingRow,
-					draftTypeRow,
-					repeatPetsRow,
-					numberOfBansRow,
-				];
-				await interaction.message
-					.edit({
-						components: updatedRows,
-					})
-					.catch(() => null);
-			}
-		);
-
-		collector3.on(
-			'collect',
-			async (interaction: MessageComponentInteraction) => {
-				if (!interaction.isStringSelectMenu()) return;
-				if (interaction.user != this.host.user) {
-					interaction.reply({
-						content:
-							"You don't have permission to change the game settings.",
-						ephemeral: true,
-					});
-					return;
-				}
-				await interaction.deferUpdate();
-
-				switch (interaction.customId) {
-					case 'bidding':
-						this.bidding = interaction.values[0] === 'true';
-
-						biddingRow =
-							new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-								createDropdown(
-									'bidding',
-									`Bidding: ${this.bidding}`,
-									biddingOptions
-								)
+						case 'bidding':
+							this.bidding = value === 'true';
+							biddingRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+								createDropdown('bidding', `Bidding: ${this.bidding}`, biddingOptions)
 							);
-						break;
-				}
+							break;
+					}
 
-				const updatedRows = [biddingRow];
-				await interaction.message
-					.edit({
-						components: updatedRows,
-					})
-					.catch(() => null);
-			}
-		);
+					// Edit the correct message based on collector
+					const updatedRows = index === 0
+						? [numberOfPetsDraftRow, numberOfFoodsDraftRow, timerPerGroupRow, timerBaseRow, timeToLookRow]
+						: index === 1
+						? [randomizeTiersRow, allowTalkingRow, draftTypeRow, repeatPetsRow, numberOfBansRow]
+						: [biddingRow];
+
+					await safe(interaction.message.edit({ components: updatedRows }), "Update lobby dropdowns");
+				});
+
+				collector.on('end', async (_collected, reason) => {
+					console.log(`Lobby settings collector ended for message ${index + 1} with reason: ${reason}`);
+					// Disable dropdowns after collector ends
+					const message = this.lobbyMessages[index];
+					if (!message) return;
+					await safe(
+						message.edit({
+							components: message.components.map(row => {
+								row.components.forEach(c => { if ('setDisabled' in c) (c as any).setDisabled(true); });
+								return row;
+							}),
+						}),
+						"Disable lobby dropdowns after collector end"
+					);
+				});
+			});
+		} catch (err) {
+			console.error('lobbyOptions failed:', err);
+		}
 	}
 
 	private constructGroups() {
-		for (let i = 0; i < 6; i++) {
+		for (let tierIndex = 0; tierIndex < 6; tierIndex++) {
 			const tierGroups: Tier[] = [];
 
-			let validPets = this.deck.tiers[i].pets;
-			let numberOfGroups = this.bidding ? this.players.length + 2 + this.numberOfBans : this.players.length + 2;
+			// Make a copy of pets for this tier
+			let availablePets = [...this.deck.tiers[tierIndex].pets];
+			const tierFoods = [...this.deck.tiers[tierIndex].foods];
 
-			for (let j = 0; j < numberOfGroups; j++) {
-				const shuffledPets = [...validPets].sort(
-					() => Math.random() - 0.5
-				);
-				const shuffledFoods = [...this.deck.tiers[i].foods].sort(
-					() => Math.random() - 0.5
-				);
+			// Determine number of groups for this tier
+			const numberOfGroups = this.bidding
+				? this.players.length + 2 + this.numberOfBans
+				: this.players.length + 2;
 
-				const [tandgrisner] = validPets.splice(
-					validPets.findIndex((pet) => pet.name === 'Tandgrisner'),
-					1
-				);
+			for (let groupIndex = 0; groupIndex < numberOfGroups; groupIndex++) {
+				// Shuffle pets and foods
+				const shuffledPets = [...availablePets].sort(() => Math.random() - 0.5);
+				const shuffledFoods = [...tierFoods].sort(() => Math.random() - 0.5);
+
+				// Find Tandgrisner (if exists) and remove it temporarily
+				const tandgrisnerIndex = availablePets.findIndex(p => p.name === 'Tandgrisner');
+				const tandgrisner = tandgrisnerIndex !== -1 ? availablePets.splice(tandgrisnerIndex, 1)[0] : null;
+
 				const selectedPets: Pet[] = [];
+
 				for (const pet of shuffledPets) {
 					if (pet.name === 'Tandgnost') {
-						if (selectedPets.length == this.numberOfPetsDraft - 1)
-							continue;
+						// Ensure Tandgnost + Tandgrisner logic
+						if (selectedPets.length >= this.numberOfPetsDraft - 1 && tandgrisner) continue;
 						selectedPets.push(pet);
-						selectedPets.push(tandgrisner);
+						if (tandgrisner) selectedPets.push(tandgrisner);
 					} else if (pet.name !== 'Tandgrisner') {
 						selectedPets.push(pet);
 					}
 
-					if (selectedPets.length >= this.numberOfPetsDraft) {
-						break;
-					}
+					if (selectedPets.length >= this.numberOfPetsDraft) break;
 				}
 
-				const selectedFoods = shuffledFoods.slice(
-					0,
-					this.numberOfFoodsDraft
-				);
+				// Select foods
+				const selectedFoods = shuffledFoods.slice(0, this.numberOfFoodsDraft);
+
+				// Remove selected pets if repeatPets is false
 				if (!this.repeatPets) {
-					validPets = validPets.filter(
-						(pet) =>
-							!selectedPets.some(
-								(selected) => selected.name === pet.name
-							)
+					availablePets = availablePets.filter(
+						(pet) => !selectedPets.some((selected) => selected.name === pet.name)
 					);
 				}
 
@@ -993,186 +779,181 @@ export class Lobby extends Game {
 		}
 	}
 
-	async waitStart() {
-		await new Promise((resolve) => setTimeout(resolve, 3000));
+	private async waitStart() {
+		try {
+			await new Promise((resolve) => setTimeout(resolve, 3000));
 
-		const startGameButton = new ButtonBuilder()
-			.setCustomId('start_game_button')
-			.setLabel('Start Game')
-			.setStyle(ButtonStyle.Success);
+			const startGameButton = new ButtonBuilder()
+				.setCustomId('start_game_button')
+				.setLabel('Start Game')
+				.setStyle(ButtonStyle.Success);
 
-		const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-			startGameButton
-		);
+			const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(startGameButton);
 
-		let startMessage = await this.channel.send({
-			components: [buttonRow],
-		});
-
-		await new Promise<void>((resolve) => {
-			const collector = startMessage.createMessageComponentCollector();
-
-			collector.on(
-				'collect',
-				async (interaction: MessageComponentInteraction) => {
-					if (interaction.user.id == this.host.user.id) {
-						collector.stop();
-					} else {
-						interaction.reply({
-							content:
-								"You don't have permission to access this button.",
-							ephemeral: true,
-						});
-					}
-				}
+			const startMessage = await safe(
+				this.channel.send({ components: [buttonRow] }),
+				"Send start game button"
 			);
 
-			collector.on('end', async () => {
-				await startMessage.delete().catch(() => null);
-				resolve();
+			if (!startMessage) throw new Error("Failed to send startMessage.")
+
+			await new Promise<void>((resolve) => {
+				const collector = startMessage.createMessageComponentCollector();
+
+				collector.on('collect', async (interaction: MessageComponentInteraction) => {
+					if (interaction.user.id === this.host.user.id) {
+						collector.stop('host_pressed');
+					} else {
+						await safe(
+							interaction.reply({
+								content: "You don't have permission to access this button.",
+								ephemeral: true,
+							}),
+							"Reply to unauthorized button press"
+						);
+					}
+				});
+
+				collector.on('end', async () => {
+					await safe(startMessage.delete(), "Delete start game button message");
+					resolve();
+				});
 			});
-		});
+		} catch (err) {
+			console.error('waitStart failed:', err);
+		}
 	}
 
-	async joinLeaveGame() {
-		const joinGameButton = new ButtonBuilder()
-			.setCustomId('join_game_button')
-			.setLabel('Join Game')
-			.setStyle(ButtonStyle.Success);
+	private async joinLeaveGame() {
+		try {
+			const joinGameButton = new ButtonBuilder()
+				.setCustomId('join_game_button')
+				.setLabel('Join Game')
+				.setStyle(ButtonStyle.Success);
 
-		const leaveGameButton = new ButtonBuilder()
-			.setCustomId('leave_game_button')
-			.setLabel('Leave Game')
-			.setStyle(ButtonStyle.Danger);
+			const leaveGameButton = new ButtonBuilder()
+				.setCustomId('leave_game_button')
+				.setLabel('Leave Game')
+				.setStyle(ButtonStyle.Danger);
 
-		const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-			joinGameButton,
-			leaveGameButton
-		);
+			const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+				joinGameButton,
+				leaveGameButton
+			);
 
-		const joinLeaveMessage: Message = await this.channel.send({
-			components: [buttonRow],
-		});
+			const joinLeaveMessage = await safe(
+				this.channel.send({ components: [buttonRow] }),
+				"Send join/leave message"
+			);
 
-		this.lobbyMessages.push(joinLeaveMessage);
+			if (!joinLeaveMessage) {
+				console.error("Failed to send joinLeaveMessage.");
+				throw new Error("Failed to send joinLeaveMessage.");
+			}
 
-		await new Promise<void>((resolve, reject) => {
-			const collector =
-				joinLeaveMessage?.createMessageComponentCollector();
+			this.lobbyMessages.push(joinLeaveMessage);
 
-			collector?.on(
-				'collect',
-				async (interaction: MessageComponentInteraction) => {
+			await new Promise<void>((resolve) => {
+				const collector = joinLeaveMessage.createMessageComponentCollector();
+
+				collector.on('collect', async (interaction: MessageComponentInteraction) => {
 					const userId = interaction.user.id;
 
 					if (interaction.customId === 'join_game_button') {
-						if (
-							this.players.some(
-								(player) => player.user.id === userId
-							)
-						) {
-							await interaction.reply({
+						if (this.players.some((player) => player.user.id === userId)) {
+							await safe(interaction.reply({
 								content: 'You are already in the game!',
 								ephemeral: true,
-							});
+							}), "Reply already in game");
 							return;
 						}
+
 						if (this.players.length >= 18) {
-							await interaction.reply({
+							await safe(interaction.reply({
 								content: 'Lobby is full. 18 Players Max.',
 								ephemeral: true,
-							});
+							}), "Reply lobby full");
 							return;
 						}
 
-						this.players.push(
-							await Player.create(interaction.user, this.guild)
-						);
-						await this.channel.permissionOverwrites.edit(
-							interaction.user.id,
-							{
+						const newPlayer = await safe(Player.create(interaction.user, this.guild), "Create player");
+						if (newPlayer) {
+							this.players.push(newPlayer);
+							await safe(this.channel.permissionOverwrites.edit(interaction.user.id, {
 								SendMessages: true,
 								AddReactions: true,
-							}
-						);
-						await interaction.reply({
-							content: `${interaction.user.displayName} has joined the lobby.`,
-						});
+							}), "Update join permissions");
+
+							await safe(interaction.reply({
+								content: `${interaction.user.displayName} has joined the lobby.`,
+							}), "Reply player joined");
+						}
 					} else if (interaction.customId === 'leave_game_button') {
-						const playerIndex = this.players.findIndex(
-							(player) => player.user.id === userId
-						);
+						const playerIndex = this.players.findIndex((player) => player.user.id === userId);
 
 						if (playerIndex === -1) {
-							await interaction.reply({
+							await safe(interaction.reply({
 								content: 'You are not in the game!',
 								ephemeral: true,
-							});
+							}), "Reply not in game");
 							return;
 						}
 
 						if (userId === this.host.user.id) {
-							await interaction.deferReply();
-							this.deleteGame();
+							await safe(interaction.deferReply(), "Defer host leave");
+							await safe(this.deleteGame(), "Delete game");
 							return;
 						}
 
 						this.players.splice(playerIndex, 1);
-						await this.channel.permissionOverwrites.edit(
-							interaction.user.id,
-							{
-								SendMessages: false,
-								AddReactions: false,
-							}
-						);
-						await interaction.reply({
+						await safe(this.channel.permissionOverwrites.edit(interaction.user.id, {
+							SendMessages: false,
+							AddReactions: false,
+						}), "Update leave permissions");
+
+						await safe(interaction.reply({
 							content: `${interaction.user.displayName} has left the lobby.`,
-						});
+						}), "Reply player left");
 					}
-				}
-			);
-		});
+				});
+			});
+		} catch (err) {
+			console.error("joinLeaveGame failed:", err);
+		}
 	}
 
 	async biddingDraft(tier: number, timer: number) {
 		await new Promise<void>(async (resolve) => {
+			let interval: NodeJS.Timeout | null = null;
 			try {
 				let remainingTime = timer;
 
 				const priorityMessage =
-					'Priority: ' +
-					this.players
-						.map((player) => player.user.displayName)
-						.join(' => ');
+					'Priority: ' + this.players.map(p => p.user.displayName).join(' => ');
 
-				const countdown = await this.channel.send({
-					content:
-						`Timer: ${remainingTime / 1000} seconds left.\n` +
-						priorityMessage,
-					files: [
-						{
-							attachment: await this.getGroups(
-								this.deck.groups[tier],
-								[]
-							),
-						},
-					],
-				});
+				const groupImageBuffer = await safe(
+					this.getGroups(this.deck.groups[tier], []),
+					"Get group image"
+				);
+
+				const countdown = await safe(
+					this.channel.send({
+						content: `Timer: ${remainingTime / 1000} seconds left.\n${priorityMessage}`,
+						files: fileIfExists(groupImageBuffer),
+					}),
+					"Send countdown message"
+				);
+
+				if (!countdown) throw new Error("Failed to send countdown message.");
 
 				const updateCountdown = async () => {
 					if (remainingTime > 0 && interval !== null) {
-						remainingTime -=
-							remainingTime % 5000 === 0
-								? 5000
-								: remainingTime % 5000;
-						const nextTimeout =
-							remainingTime >= 5000 ? 5000 : remainingTime;
+						remainingTime -= remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+						const nextTimeout = remainingTime >= 5000 ? 5000 : remainingTime;
 
-						await countdown.edit({
-							content:
-								`Timer: ${remainingTime / 1000} seconds left.\n` +
-								priorityMessage,
-						});
+						await safe(countdown.edit({
+							content: `Timer: ${remainingTime / 1000} seconds left.\n${priorityMessage}`,
+						}), "Edit countdown");
 
 						interval = setTimeout(updateCountdown, nextTimeout);
 					} else {
@@ -1180,14 +961,10 @@ export class Lobby extends Game {
 					}
 				};
 
-				const firstTimeout =
-					remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+				const firstTimeout = remainingTime % 5000 === 0 ? 5000 : remainingTime % 5000;
+				interval = setTimeout(updateCountdown, firstTimeout);
 
-				let interval: NodeJS.Timeout | null = setTimeout(
-					updateCountdown,
-					firstTimeout
-				);
-
+				// Build pick and ban messages
 				const numGroups = this.deck.groups[tier].length;
 				const pickRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
 				const banRows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
@@ -1197,221 +974,174 @@ export class Lobby extends Game {
 				const selections = new Map<string, Map<string, string>>();
 				const submittedUsers = new Set<string>();
 
+				// Create ban menus
 				for (let i = 0; i < this.numberOfBans; i++) {
 					const banNumber = i + 1;
-
-					const suffix =
-						banNumber % 10 === 1 && banNumber % 100 !== 11
-							? 'st'
-							: banNumber % 10 === 2 && banNumber % 100 !== 12
-							? 'nd'
-							: banNumber % 10 === 3 && banNumber % 100 !== 13
-							? 'rd'
-							: 'th';
+					const suffix = banNumber % 10 === 1 && banNumber % 100 !== 11 ? 'st' :
+								banNumber % 10 === 2 && banNumber % 100 !== 12 ? 'nd' :
+								banNumber % 10 === 3 && banNumber % 100 !== 13 ? 'rd' : 'th';
 
 					const selectMenu = new StringSelectMenuBuilder()
 						.setCustomId(`Ban ${banNumber}`)
 						.setPlaceholder(`${banNumber}${suffix} Ban`);
 
 					for (let j = 0; j < numGroups; j++) {
-						const label = String.fromCharCode(65 + j);
-						selectMenu.addOptions({ label, value: label });
+						selectMenu.addOptions({ label: String.fromCharCode(65 + j), value: String.fromCharCode(65 + j) });
 					}
 
-					const actionRow =
-						new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
-					banRows.push(actionRow);
+					banRows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu));
 
 					if (banRows.length % 5 === 0 || i === this.numberOfBans - 1) {
-						const isFirstGroup = banMessages.length === 0;
-						banMessages.push(
-							await this.channel.send({
-								content: isFirstGroup ? '__**Bans**__' : '',
-								components: banRows,
-							})
-						);
-
+						const isFirst = banMessages.length === 0;
+						const msg = await safe(this.channel.send({ content: isFirst ? '__**Bans**__' : '', components: banRows }), "Send ban messages");
+						if (msg) banMessages.push(msg);
 						banRows.length = 0;
 					}
 				}
 
+				// Create pick menus
 				for (let i = 0; i < this.players.length + this.numberOfBans; i++) {
 					const pickNumber = i + 1;
-
-					const suffix =
-						pickNumber % 10 === 1 && pickNumber % 100 !== 11
-							? 'st'
-							: pickNumber % 10 === 2 && pickNumber % 100 !== 12
-							? 'nd'
-							: pickNumber % 10 === 3 && pickNumber % 100 !== 13
-							? 'rd'
-							: 'th';
+					const suffix = pickNumber % 10 === 1 && pickNumber % 100 !== 11 ? 'st' :
+								pickNumber % 10 === 2 && pickNumber % 100 !== 12 ? 'nd' :
+								pickNumber % 10 === 3 && pickNumber % 100 !== 13 ? 'rd' : 'th';
 
 					const selectMenu = new StringSelectMenuBuilder()
 						.setCustomId(`Pick ${pickNumber}`)
 						.setPlaceholder(`${pickNumber}${suffix} Pick`);
 
 					for (let j = 0; j < numGroups; j++) {
-						const label = String.fromCharCode(65 + j);
-						selectMenu.addOptions({ label, value: label });
+						selectMenu.addOptions({ label: String.fromCharCode(65 + j), value: String.fromCharCode(65 + j) });
 					}
 
-					const actionRow =
-						new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
-					pickRows.push(actionRow);
+					pickRows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu));
 
 					if (pickRows.length % 5 === 0 || i === this.players.length + this.numberOfBans - 1) {
-						const isFirstGroup = pickMessages.length === 0;
-						pickMessages.push(
-							await this.channel.send({
-								content: isFirstGroup ? '__**Picks**__' : '',
-								components: pickRows,
-							})
-						);
-
+						const isFirst = pickMessages.length === 0;
+						const msg = await safe(this.channel.send({ content: isFirst ? '__**Picks**__' : '', components: pickRows }), "Send pick messages");
+						if (msg) pickMessages.push(msg);
 						pickRows.length = 0;
 					}
 				}
 
-				const submitButton = new ButtonBuilder()
-					.setCustomId('submit')
-					.setLabel('Submit')
-					.setStyle(ButtonStyle.Primary);
+				// Submit and team button
+				const submitButton = new ButtonBuilder().setCustomId('submit').setLabel('Submit').setStyle(ButtonStyle.Primary);
+				const teamButton = new ButtonBuilder().setCustomId('team_button').setLabel('Team').setStyle(ButtonStyle.Success);
+				const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton, teamButton);
 
-				const teamButton = new ButtonBuilder()
-					.setCustomId('team_button')
-					.setLabel('Team')
-					.setStyle(ButtonStyle.Success);
+				const submitMsg = await safe(this.channel.send({ content: `${this.getHammerTime(timer + 1000)}`, components: [buttonRow] }), "Send submit buttons");
+				if (submitMsg) pickMessages.push(submitMsg);
 
-				const buttonRow =
-					new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton, teamButton);
-
-				pickMessages.push(
-					await this.channel.send({
-						content: `${this.getHammerTime(timer + 1000)}`,
-						components: [buttonRow],
-					})
-				);
-
+				// Collector
 				const filter = (interaction: Interaction) =>
 					(interaction.isStringSelectMenu() && (interaction.customId.startsWith('Pick') || interaction.customId.startsWith('Ban'))) ||
-					(interaction.isButton() && interaction.customId === 'submit') ||
-					(interaction.isButton() && interaction.customId === 'team_button');
+					(interaction.isButton() && ['submit', 'team_button'].includes(interaction.customId));
 
-				const collector = this.channel.createMessageComponentCollector({
-					filter,
-					time: timer + 1000,
-				});
+				const collector = this.channel.createMessageComponentCollector({ filter, time: timer + 1000 });
 
 				collector.on('collect', async (interaction) => {
 					const userId = interaction.user.id;
-
 					const isPlayer = this.players.some(p => p.user.id === userId);
+
 					if (!isPlayer && interaction.isStringSelectMenu()) {
-						return interaction.reply({ content: 'You are not a participant!', ephemeral: true });
+						await safe(interaction.reply({ content: 'You are not a participant!', ephemeral: true }), "Not a participant reply");
+						return;
 					}
 
 					if (interaction.isStringSelectMenu()) {
 						const dropdownId = interaction.customId;
 						const selectedValue = interaction.values[0];
-
 						if (!selections.has(userId)) selections.set(userId, new Map());
 						selections.get(userId)!.set(dropdownId, selectedValue);
-
-						return interaction.deferUpdate();
+						await safe(interaction.deferUpdate(), "Defer dropdown update");
+						return;
 					}
 
 					if (interaction.isButton() && interaction.customId === 'submit') {
 						if (submittedUsers.has(userId)) {
-							return interaction.reply({ content: 'Already submitted!', ephemeral: true });
+							await safe(interaction.reply({ content: 'Already submitted!', ephemeral: true }), "Already submitted reply");
+							return;
 						}
 
 						submittedUsers.add(userId);
 						const userSelections = selections.get(userId) ?? new Map();
-
-						const formattedSelections = Array.from(userSelections.entries())
-							.map(([dropdownId, value]) => `${dropdownId}: ${value}`)
-							.join('\n');
-
-						await interaction.reply({
-							content: `Submission received:\n${formattedSelections}`,
-							ephemeral: true,
-						});
+						const formattedSelections = Array.from(userSelections.entries()).map(([id, val]) => `${id}: ${val}`).join('\n');
+						await safe(interaction.reply({ content: `Submission received:\n${formattedSelections}`, ephemeral: true }), "Submit reply");
 
 						if (submittedUsers.size === this.players.length) collector.stop();
 					}
 
 					if (interaction.isButton() && interaction.customId === 'team_button') {
 						const player = this.players.find(p => p.user.id === userId);
-						await interaction.deferReply({ ephemeral: true });
-						const teamResponse = await this.sendTeam(player!);
-						await interaction.editReply(teamResponse);
+						await safe(interaction.deferReply({ ephemeral: true }), "Defer team reply");
+						const teamResponse = await safe(this.sendTeam(player!), "Send team image");
+						if (teamResponse) await safe(interaction.editReply(teamResponse), "Edit team reply");
 					}
 				});
 
 				collector.on('end', async () => {
-					for (const m of [...banMessages, ...pickMessages]) m.delete().catch(() => null);
-					clearTimeout(interval!);
-					interval = null;
+					for (const m of [...banMessages, ...pickMessages]) await safe(m.delete(), "Delete pick/ban messages");
+					if (interval) clearTimeout(interval);
 
+					// Randomly fill unsubmitted players
 					for (const player of this.players) {
-						const userId = player.user.id;
-						if (!submittedUsers.has(userId)) {
+						if (!submittedUsers.has(player.user.id)) {
 							const randomSelections = new Map<string, string>();
-							const availableOptions = new Set(
-								Array.from({ length: numGroups }, (_, i) => String.fromCharCode(65 + i))
-							);
-
+							const availableOptions = new Set(Array.from({ length: numGroups }, (_, i) => String.fromCharCode(65 + i)));
 							for (let i = 0; i < this.players.length; i++) {
 								const optionsArray = Array.from(availableOptions);
 								const random = optionsArray[Math.floor(Math.random() * optionsArray.length)];
 								randomSelections.set(`Pick ${i + 1}`, random);
 								availableOptions.delete(random);
 							}
-
-							selections.set(userId, randomSelections);
+							selections.set(player.user.id, randomSelections);
 						}
 					}
 
-					const assignGroups = await this.assignGroups(this.players, selections);
-
-					for (const [userId, groupNumber] of Array.from(assignGroups)) {
-						const player = this.players.find(p => p.user.id === userId);
-						if (player) await this.pickOption(player, tier, groupNumber, []);
+					const assignGroups = await safe(this.assignGroups(this.players, selections), "Assign groups");
+					if (assignGroups) {
+						for (const [userId, groupNumber] of Array.from(assignGroups)) {
+							const player = this.players.find(p => p.user.id === userId);
+							if (player) await safe(this.pickOption(player, tier, groupNumber, []), "Pick option");
+						}
 					}
 
 					resolve();
 				});
-
 			} catch (err) {
 				console.error('Draft Error:', err);
+				if (interval) clearTimeout(interval);
 				resolve();
 			}
 		});
 	}
 
-	private async assignGroups( players: Player[], selections: Map<string, Map<string, string>>): Promise<Map<string, number>> {
+	private async assignGroups(
+		players: Player[],
+		selections: Map<string, Map<string, string>>
+	): Promise<Map<string, number>> {
 		const assignedGroups = new Map<string, number>();
 
+		// Count the number of bans per group
 		const banCounts = new Map<number, number>();
 		selections.forEach((userSelections) => {
 			userSelections.forEach((label, dropdownId) => {
-			if (dropdownId.startsWith("Ban")) {
-				const groupNumber = label.charCodeAt(0) - 65;
-				banCounts.set(groupNumber, (banCounts.get(groupNumber) ?? 0) + 1);
-			}
+				if (dropdownId.startsWith("Ban")) {
+					const groupNumber = label.charCodeAt(0) - 65;
+					banCounts.set(groupNumber, (banCounts.get(groupNumber) ?? 0) + 1);
+				}
 			});
 		});
 
 		const bannedGroups = new Set<number>();
 		const numberOfBans = this.numberOfBans;
 
+		// Determine which groups are banned based on votes
 		if (numberOfBans > 0) {
-			let sortedBans = Array.from(banCounts.entries())
-				.sort((a, b) => b[1] - a[1]);
-
+			const sortedBans = Array.from(banCounts.entries()).sort((a, b) => b[1] - a[1]);
 			let bannedSoFar = 0;
 			let i = 0;
+
 			while (bannedSoFar < numberOfBans && i < sortedBans.length) {
 				const sameCountGroups: number[] = [sortedBans[i][0]];
 				const count = sortedBans[i][1];
@@ -1428,59 +1158,48 @@ export class Lobby extends Game {
 						bannedSoFar++;
 					}
 				}
-
 				i = j;
 			}
 
-			const sortedBanCounts = Array.from(banCounts.entries())
-				.sort((a, b) => b[1] - a[1]);
+			// Send ban tally safely
+			const voteCountLines = Array.from(banCounts.entries())
+				.sort((a, b) => b[1] - a[1])
+				.map(([groupNumber, count]) => `${String.fromCharCode(65 + groupNumber)}: ${count} vote${count === 1 ? '' : 's'}`);
 
-			const voteCountLines: string[] = [];
-			sortedBanCounts.forEach(([groupNumber, count]) => {
-				const letter = String.fromCharCode(65 + groupNumber);
-				voteCountLines.push(`${letter}: ${count} vote${count === 1 ? '' : 's'}`);
-			});
-
-			const bannedLetters = Array.from(bannedGroups)
-				.sort((a,b) => a - b)
-				.map(g => String.fromCharCode(65 + g));
-
+			const bannedLetters = Array.from(bannedGroups).sort((a, b) => a - b).map(g => String.fromCharCode(65 + g));
 			let content = `__**Ban Vote Tally**__\n${voteCountLines.join('\n')}\n\n`;
-			if (bannedLetters.length > 0) {
-				content += `__**Banned Groups**__: ${bannedLetters.join(', ')}`;
-			} else {
-				content += `No groups were banned.`;
-			}
+			content += bannedLetters.length > 0 ? `__**Banned Groups**__: ${bannedLetters.join(', ')}` : "No groups were banned.";
 
-			await this.channel.send({ content }).catch(() => null);
+			await safe(this.channel.send({ content }), "Send ban tally message");
 		}
 
+		// Track available groups
 		const availableGroups = new Set<number>();
 		for (let i = 0; i < this.deck.groups.length; i++) {
-			if (!bannedGroups.has(i)) {
-				availableGroups.add(i);
-			}
+			if (!bannedGroups.has(i)) availableGroups.add(i);
 		}
 
+		// Assign groups to players based on selections or randomly if necessary
 		for (const player of players) {
 			const userId = player.user.id;
 			const userSelections = selections.get(userId);
 
 			if (userSelections) {
-				const selectionsList = Array.from(userSelections.entries())
-					.filter(([dropdownId, _]) => dropdownId.startsWith("Pick"))
+				const picks = Array.from(userSelections.entries())
+					.filter(([dropdownId]) => dropdownId.startsWith("Pick"))
 					.sort((a, b) => a[0].localeCompare(b[0]));
 
-				for (const [dropdownId, label] of selectionsList) {
+				for (const [_, label] of picks) {
 					const groupNumber = label.charCodeAt(0) - 65;
 					if (availableGroups.has(groupNumber)) {
 						assignedGroups.set(userId, groupNumber);
 						availableGroups.delete(groupNumber);
-					break;
+						break;
 					}
 				}
 			}
 
+			// Assign random group if no valid selection was made
 			if (!assignedGroups.has(userId) && availableGroups.size > 0) {
 				const remaining = Array.from(availableGroups);
 				const randomGroup = remaining[Math.floor(Math.random() * remaining.length)];
