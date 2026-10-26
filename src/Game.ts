@@ -65,12 +65,14 @@ export class Game {
 		);
 		if (!closingMessage) return;
 
-		const collector = closingMessage.createMessageComponentCollector();
+		const collector = closingMessage.createMessageComponentCollector({
+			filter: interaction => interaction.customId === 'close_game_button',
+		});
 
 		collector.on('collect', async (interaction: MessageComponentInteraction) => {
 			if (
 				this.players.some((player) => player.user.id === interaction.user.id) ||
-				interaction.guild?.members.cache.get(interaction.user.id)?.permissions.has('1321368228236230666')
+				(interaction.inCachedGuild() && interaction.member.roles.cache.has('1321368228236230666'))
 			) {
 				await safe(this.deleteGame(), 'Delete game');
 			} else {

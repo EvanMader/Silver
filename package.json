@@ -1,24 +1,30 @@
 {
   "name": "silver",
   "version": "1.0.0",
-  "main": "dist/index.js",
+  "private": true,
+  "main": "dist/Silver.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "tsx watch src/Silver.ts",
     "quick": "tsx src/Silver.ts",
     "build": "tsc",
-    "start": "node dist/Silver.js"
+    "start": "node dist/Silver.js",
+    "test": "npm run build && node --test test/*.test.cjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "discord.js": "^14.16.3",
+    "discord.js": "^14.27.0",
     "dotenv": "^16.4.7",
-    "sharp": "^0.33.5"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "tsx": "^4.19.2"
+    "tsx": "^4.23.15",
+    "typescript": "5.7.2"
   }
 }

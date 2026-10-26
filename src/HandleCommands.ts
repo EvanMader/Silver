@@ -3,6 +3,7 @@ import { Game } from './Game';
 import { Player } from './Player';
 import { Lobby } from './Lobby';
 import { safe } from './Silver';
+import { SELF_ASSIGNABLE_ROLE_IDS } from './Roles';
 
 export function handleCommands(client: Client) {
 	client.on(Events.InteractionCreate, async (interaction) => {
@@ -12,8 +13,9 @@ export function handleCommands(client: Client) {
 
 			// Handle button role toggling
 			if (interaction.isButton()) {
+				if (!interaction.inCachedGuild() || !SELF_ASSIGNABLE_ROLE_IDS.has(interaction.customId)) return;
 				const role = guild.roles.cache.get(interaction.customId);
-				if (!role) return;
+				if (!role || role.managed) return;
 
 				const roleManager: GuildMemberRoleManager = interaction.member
 					.roles as GuildMemberRoleManager;

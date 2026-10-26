@@ -6,3 +6,7 @@
 .env
 .env.*
 !.env.example
+
+# Logs can include request details and other private runtime data
+*.log
+npm-debug.log*

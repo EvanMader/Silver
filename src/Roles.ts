@@ -12,31 +12,35 @@ interface RoleButton {
 	label: string;
 }
 
+const packs1: RoleButton[] = [
+	{ id: '1321488657487626271', label: 'Turtle Pack' },
+	{ id: '1321488707294855259', label: 'Puppy Pack' },
+	{ id: '1321488739478012044', label: 'Star Pack' },
+	{ id: '1321488865709527060', label: 'Golden Pack' },
+	{ id: '1321488902925848617', label: 'Unicorn Pack' },
+];
+
+const packs2: RoleButton[] = [
+	{ id: '1321489583023722548', label: 'Tardigayde Pack' },
+	{ id: '1321488944625356841', label: 'Sunfish Pack' },
+	{ id: '1395573374935105617', label: 'Danger Pack' },
+	{ id: '1433148084573175950', label: 'Vampire Pack' },
+];
+
+const pingRoles: RoleButton[] = [
+	{ id: '1333279745596461056', label: 'Ping4Game' },
+];
+
+export const SELF_ASSIGNABLE_ROLE_IDS = new Set(
+	[...packs1, ...packs2, ...pingRoles].map(role => role.id)
+);
+
 export async function sendMessageWithButtons(
 	channelId: string,
 	client: Client
 ): Promise<void> {
 	const channel = (await client.channels.fetch(channelId)) as TextChannel | null;
 	if (!channel) return;
-
-	const packs1: RoleButton[] = [
-		{ id: '1321488657487626271', label: 'Turtle Pack' },
-		{ id: '1321488707294855259', label: 'Puppy Pack' },
-		{ id: '1321488739478012044', label: 'Star Pack' },
-		{ id: '1321488865709527060', label: 'Golden Pack' },
-		{ id: '1321488902925848617', label: 'Unicorn Pack' },
-	];
-
-	const packs2: RoleButton[] = [
-		{ id: '1321489583023722548', label: 'Tardigayde Pack' },
-		{ id: '1321488944625356841', label: 'Sunfish Pack' },
-		{ id: '1395573374935105617', label: 'Danger Pack' },
-		{ id: '1433148084573175950', label: 'Vampire Pack' },
-	];
-
-	const pingRoles: RoleButton[] = [
-		{ id: '1333279745596461056', label: 'Ping4Game' },
-	];
 
 	const createActionRow = (roles: RoleButton[]) => {
 		const row = new ActionRowBuilder<ButtonBuilder>();

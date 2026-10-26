@@ -3,6 +3,7 @@ import {
 	ButtonBuilder,
 	ButtonStyle,
 	ChannelType,
+	ComponentType,
 	Client,
 	Guild,
 	MessageComponentInteraction,
@@ -448,13 +449,6 @@ export class Lobby extends Game {
 				});
 
 				collector?.on("collect", async interaction => {
-					if (interaction.customId === "team_button") {
-						await safe(interaction.deferReply({ ephemeral: true }), "Defer Team Reply");
-						const teamResponse = await safe(this.sendTeam(player), "Send Team Data");
-						await safe(interaction.editReply(teamResponse ?? ""), "Edit Team Reply");
-						return;
-					}
-
 					if (interaction.user.id !== player.user.id) {
 						await safe(
 							interaction.reply({
@@ -463,6 +457,13 @@ export class Lobby extends Game {
 							}),
 							"Wrong User Interaction Reply"
 						);
+						return;
+					}
+
+					if (interaction.customId === "team_button") {
+						await safe(interaction.deferReply({ ephemeral: true }), "Defer Team Reply");
+						const teamResponse = await safe(this.sendTeam(player), "Send Team Data");
+						await safe(interaction.editReply(teamResponse ?? ""), "Edit Team Reply");
 						return;
 					}
 
@@ -711,9 +712,11 @@ export class Lobby extends Game {
 					if (!message) return;
 					await safe(
 						message.edit({
-							components: message.components.map(row => {
-								row.components.forEach(c => { if ('setDisabled' in c) (c as any).setDisabled(true); });
-								return row;
+							components: message.components.filter(row => row.type === ComponentType.ActionRow).map(row => {
+								return {
+									...row.toJSON(),
+									components: row.components.map(component => ({ ...component.toJSON(), disabled: true })),
+								};
 							}),
 						}),
 						"Disable lobby dropdowns after collector end"
@@ -1043,7 +1046,7 @@ export class Lobby extends Game {
 					const userId = interaction.user.id;
 					const isPlayer = this.players.some(p => p.user.id === userId);
 
-					if (!isPlayer && interaction.isStringSelectMenu()) {
+					if (!isPlayer) {
 						await safe(interaction.reply({ content: 'You are not a participant!', ephemeral: true }), "Not a participant reply");
 						return;
 					}
@@ -1098,7 +1101,7 @@ export class Lobby extends Game {
 						}
 					}
 
-					const assignGroups = await safe(this.assignGroups(this.players, selections), "Assign groups");
+					const assignGroups = await safe(this.assignGroups(this.players, selections, numGroups), "Assign groups");
 					if (assignGroups) {
 						for (const [userId, groupNumber] of Array.from(assignGroups)) {
 							const player = this.players.find(p => p.user.id === userId);
@@ -1118,7 +1121,8 @@ export class Lobby extends Game {
 
 	private async assignGroups(
 		players: Player[],
-		selections: Map<string, Map<string, string>>
+		selections: Map<string, Map<string, string>>,
+		numberOfGroups: number
 	): Promise<Map<string, number>> {
 		const assignedGroups = new Map<string, number>();
 
@@ -1175,7 +1179,7 @@ export class Lobby extends Game {
 
 		// Track available groups
 		const availableGroups = new Set<number>();
-		for (let i = 0; i < this.deck.groups.length; i++) {
+		for (let i = 0; i < numberOfGroups; i++) {
 			if (!bannedGroups.has(i)) availableGroups.add(i);
 		}
 
@@ -1187,7 +1191,7 @@ export class Lobby extends Game {
 			if (userSelections) {
 				const picks = Array.from(userSelections.entries())
 					.filter(([dropdownId]) => dropdownId.startsWith("Pick"))
-					.sort((a, b) => a[0].localeCompare(b[0]));
+					.sort((a, b) => Number(a[0].slice(5)) - Number(b[0].slice(5)));
 
 				for (const [_, label] of picks) {
 					const groupNumber = label.charCodeAt(0) - 65;
